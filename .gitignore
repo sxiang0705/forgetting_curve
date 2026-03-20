@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# SQLite 本地資料庫（看你需求；若要一起上傳可把這行刪掉）
+reminder.db
+

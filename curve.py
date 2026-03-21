@@ -192,7 +192,6 @@ def on_click_import_csv():
 
     tag_calendar_by_category()
     load_tasks()
-    clear_edit_form()
     messagebox.showinfo("完成", "CSV 匯入成功，已覆蓋舊資料。")
 
 
@@ -459,19 +458,12 @@ def clear_new_form():
     new_category_var.set(DEFAULT_CATEGORIES[0])
     new_difficulty_var.set(DEFAULT_DIFFICULTIES[0])
     new_notes_text.delete("1.0", tk.END)
-    new_reminder_mode_var.set("手動輸入")
+    new_reminder_mode_var.set("遺忘曲線")
 
 
 def clear_edit_form():
-    selected_task_id.set(-1)
-    edit_title_entry.delete(0, tk.END)
-    edit_category_var.set(DEFAULT_CATEGORIES[0])
-    edit_difficulty_var.set(DEFAULT_DIFFICULTIES[0])
-    edit_notes_text.delete("1.0", tk.END)
-    try:
-        update_task_button.config(state="disabled")
-    except Exception:
-        pass
+    # v3：修改行程面板已移除，不再使用
+    return
 
 
 def add_task_and_set_reminders():
@@ -507,32 +499,8 @@ def add_task_and_set_reminders():
 
 
 def update_selected_task_info():
-    task_id = selected_task_id.get()
-    if task_id == -1:
-        messagebox.showwarning("提示", "請先選擇要修改的任務")
-        return
-
-    title = edit_title_entry.get().strip()
-    category = edit_category_var.get().strip()
-    difficulty = edit_difficulty_var.get()
-    notes = edit_notes_text.get("1.0", tk.END).strip()
-
-    if not title:
-        messagebox.showwarning("提示", "請輸入任務名稱")
-        return
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        UPDATE tasks SET title=?, category=?, difficulty=?, notes=? WHERE id=?
-        """,
-        (title, category, difficulty, notes, task_id),
-    )
-    conn.commit()
-    conn.close()
-
-    tag_calendar_by_category()
+    # v3：修改行程面板已移除，請改用任務列雙擊彈窗修改
+    messagebox.showinfo("功能已移除", "v3 請在左上任務清單雙擊任務列來修改。")
     load_tasks()
 
 def delete_tasks():
@@ -552,17 +520,6 @@ def delete_tasks():
         cursor.execute("DELETE FROM reminders WHERE task_id = ?", (task_id,))
     conn.commit()
     conn.close()
-
-    if selected_task_id.get() != -1:
-        # 若刪除項目包含正在編輯的任務，清空編輯區
-        deleted_ids = set()
-        for item in selected_items:
-            try:
-                deleted_ids.add(int(task_tree.item(item)['values'][0]))
-            except Exception:
-                pass
-        if selected_task_id.get() in deleted_ids:
-            clear_edit_form()
 
     load_tasks()
     tag_calendar_by_category()
@@ -627,7 +584,6 @@ def refresh_filter_menu():
     # 讓新增/修改的分類下拉也能看到既有分類（仍允許使用者自行輸入）
     try:
         new_category_combo.configure(values=cats if cats else DEFAULT_CATEGORIES)
-        edit_category_combo.configure(values=cats if cats else DEFAULT_CATEGORIES)
     except Exception:
         pass
 
@@ -689,16 +645,114 @@ def on_task_select(event):
     conn.close()
     if row:
         selected_task_id.set(row[0])
-        edit_title_entry.delete(0, tk.END)
-        edit_title_entry.insert(0, row[1])
-        edit_category_var.set(row[2] or DEFAULT_CATEGORIES[0])
-        edit_difficulty_var.set(row[3] or DEFAULT_DIFFICULTIES[0])
-        edit_notes_text.delete("1.0", tk.END)
-        edit_notes_text.insert("1.0", row[4] or "")
-        try:
-            update_task_button.config(state="normal")
-        except Exception:
-            pass
+        # v3：不再顯示「修改行程」面板；改用 task_tree 雙擊彈窗修改
+
+
+def get_categories_for_combo():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT category FROM tasks")
+        cats = sorted({(r[0] or "").strip() for r in cursor.fetchall() if (r[0] or "").strip()})
+        conn.close()
+    except Exception:
+        cats = []
+    base = cats if cats else list(DEFAULT_CATEGORIES)
+    # 去重但保持穩定順序
+    seen = set()
+    result = []
+    for c in base + list(DEFAULT_CATEGORIES):
+        if c and c not in seen:
+            seen.add(c)
+            result.append(c)
+    return result
+
+
+def open_task_edit_popup(task_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT title, category, difficulty, notes FROM tasks WHERE id = ?", (task_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        messagebox.showwarning("提示", "找不到該任務")
+        return
+
+    title_val, category_val, difficulty_val, notes_val = row
+
+    popup = tk.Toplevel()
+    popup.title("修改任務資訊")
+    popup.geometry("420x360")
+    popup.attributes("-topmost", True)
+
+    tk.Label(popup, text="任務名稱", font=("Arial", 12)).grid(row=0, column=0, sticky="e", padx=10, pady=(12, 4))
+    title_entry = tk.Entry(popup, width=28, font=("Arial", 12))
+    title_entry.grid(row=0, column=1, sticky="w", padx=5, pady=(12, 4))
+    title_entry.insert(0, title_val or "")
+
+    tk.Label(popup, text="分類", font=("Arial", 12)).grid(row=1, column=0, sticky="e", padx=10, pady=4)
+    category_combo = ttk.Combobox(
+        popup,
+        values=get_categories_for_combo(),
+        state="normal",
+        width=26,
+    )
+    category_combo.grid(row=1, column=1, sticky="w", padx=5, pady=4)
+    category_combo.set(category_val or (DEFAULT_CATEGORIES[0] if DEFAULT_CATEGORIES else ""))
+
+    tk.Label(popup, text="難度", font=("Arial", 12)).grid(row=2, column=0, sticky="e", padx=10, pady=4)
+    difficulty_var = tk.StringVar(value=difficulty_val or DEFAULT_DIFFICULTIES[0])
+    ttk.OptionMenu(popup, difficulty_var, difficulty_var.get(), *DEFAULT_DIFFICULTIES).grid(
+        row=2, column=1, sticky="w", padx=5, pady=4
+    )
+
+    tk.Label(popup, text="備註", font=("Arial", 12)).grid(row=3, column=0, sticky="ne", padx=10, pady=4)
+    notes_text = tk.Text(popup, height=5, width=24, font=("Arial", 12))
+    notes_text.grid(row=3, column=1, sticky="w", padx=5, pady=4)
+    notes_text.insert("1.0", notes_val or "")
+
+    def save():
+        new_title = title_entry.get().strip()
+        new_category = category_combo.get().strip()
+        new_difficulty = difficulty_var.get()
+        new_notes = notes_text.get("1.0", tk.END).strip()
+
+        if not new_title:
+            messagebox.showwarning("提示", "請輸入任務名稱")
+            return
+
+        conn2 = sqlite3.connect(DB_PATH)
+        cursor2 = conn2.cursor()
+        cursor2.execute(
+            "UPDATE tasks SET title=?, category=?, difficulty=?, notes=? WHERE id=?",
+            (new_title, new_category, new_difficulty, new_notes, task_id),
+        )
+        conn2.commit()
+        conn2.close()
+
+        tag_calendar_by_category()
+        load_tasks()
+        popup.destroy()
+
+    tk.Button(popup, text="儲存修改", command=save, font=("Arial", 11), height=2).grid(
+        row=4, column=0, columnspan=2, sticky="we", padx=10, pady=(12, 0)
+    )
+
+
+def on_task_double_click(event):
+    # 由滑鼠位置找出對應列，再取出 task_id
+    row_id = task_tree.identify_row(event.y)
+    if not row_id:
+        return
+    values = task_tree.item(row_id).get("values", [])
+    if not values:
+        return
+    try:
+        task_id = int(values[0])
+    except Exception:
+        return
+    open_task_edit_popup(task_id)
 
 
 def reminder_checker():
@@ -1202,15 +1256,19 @@ def send_email_with_attachment(subject, body, to_email, attachment_path):
 # GUI 啟動
 root = tk.Tk()
 root.title("遺忘曲線提醒工具")
-root.geometry("900x500")
+screen_width = root.winfo_screenwidth()
+root.geometry(f"{min(1200, max(900, screen_width - 80))}x650")
+root.minsize(950, 560)
 
 selected_task_id = tk.IntVar(value=-1)
+paned = ttk.Panedwindow(root, orient="horizontal")
+paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-screen_width = root.winfo_screenwidth()
-left_width = int(screen_width * 0.6)
-left_frame = tk.Frame(root, width=left_width)
-left_frame.pack_propagate(False)  # 禁止自動調整大小
-left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+left_frame = tk.Frame(paned)
+right_frame = tk.Frame(paned)
+
+paned.add(left_frame, weight=1)
+paned.add(right_frame, weight=2)
 
 filter_var = tk.StringVar(value="全部")
 filter_options = ["全部", "已完成任務"]
@@ -1224,6 +1282,7 @@ task_tree.heading('Start Time', text='開始時間')
 task_tree.heading('Progress', text='進度')
 task_tree.pack(fill=tk.BOTH, expand=True)
 task_tree.bind('<<TreeviewSelect>>', on_task_select)
+task_tree.bind('<Double-1>', on_task_double_click)
 
 form_frame = tk.Frame(left_frame)
 form_frame.pack(fill=tk.X, pady=10)
@@ -1238,7 +1297,7 @@ new_task_frame = tk.LabelFrame(forms_panel, text="新行程", padx=10, pady=5)
 new_task_frame.pack(fill=tk.X, pady=5)
 
 edit_task_frame = tk.LabelFrame(forms_panel, text="修改行程", padx=10, pady=5)
-edit_task_frame.pack(fill=tk.X, pady=5)
+edit_task_frame.destroy()
 
 # ---------- 新行程欄位 ----------
 tk.Label(new_task_frame, text="任務名稱", font=('Arial', 12)).grid(row=0, column=0, sticky='e', pady=3)
@@ -1259,41 +1318,17 @@ new_notes_text = tk.Text(new_task_frame, height=3, width=22, font=("Arial", 12))
 new_notes_text.grid(row=3, column=1, padx=5, pady=3, sticky='w')
 
 tk.Label(new_task_frame, text="提醒模式", font=('Arial', 12)).grid(row=4, column=0, sticky='e', pady=3)
-new_reminder_mode_var = tk.StringVar(value="手動輸入")
+new_reminder_mode_var = tk.StringVar(value="遺忘曲線")
 reminder_mode_options = ["手動輸入", "遺忘曲線"]
-ttk.OptionMenu(new_task_frame, new_reminder_mode_var, reminder_mode_options[0], *reminder_mode_options).grid(row=4, column=1, padx=5, pady=3, sticky='w')
+ttk.OptionMenu(new_task_frame, new_reminder_mode_var, reminder_mode_options[1], *reminder_mode_options).grid(row=4, column=1, padx=5, pady=3, sticky='w')
 
 tk.Button(new_task_frame, text="新增任務並設定提醒", command=add_task_and_set_reminders, font=('Arial', 11), height=2).grid(row=5, column=0, columnspan=2, pady=(8, 0), sticky='we')
-
-# ---------- 修改行程欄位 ----------
-tk.Label(edit_task_frame, text="任務名稱", font=('Arial', 12)).grid(row=0, column=0, sticky='e', pady=3)
-edit_title_entry = tk.Entry(edit_task_frame, width=26, font=('Arial', 12))
-edit_title_entry.grid(row=0, column=1, padx=5, pady=3, sticky='w')
-
-tk.Label(edit_task_frame, text="分類", font=('Arial', 12)).grid(row=1, column=0, sticky='e', pady=3)
-edit_category_var = tk.StringVar(value=DEFAULT_CATEGORIES[0])
-edit_category_combo = ttk.Combobox(edit_task_frame, textvariable=edit_category_var, values=DEFAULT_CATEGORIES, state="normal", width=24)
-edit_category_combo.grid(row=1, column=1, padx=5, pady=3, sticky='w')
-
-tk.Label(edit_task_frame, text="難度", font=('Arial', 12)).grid(row=2, column=0, sticky='e', pady=3)
-edit_difficulty_var = tk.StringVar(value=DEFAULT_DIFFICULTIES[0])
-ttk.OptionMenu(edit_task_frame, edit_difficulty_var, DEFAULT_DIFFICULTIES[0], *DEFAULT_DIFFICULTIES).grid(row=2, column=1, padx=5, pady=3, sticky='w')
-
-tk.Label(edit_task_frame, text="備註", font=('Arial', 12)).grid(row=3, column=0, sticky='ne', pady=3)
-edit_notes_text = tk.Text(edit_task_frame, height=3, width=22, font=("Arial", 12))
-edit_notes_text.grid(row=3, column=1, padx=5, pady=3, sticky='w')
-
-update_task_button = tk.Button(edit_task_frame, text="更新選取任務資訊", command=update_selected_task_info, font=('Arial', 11), height=2, state="disabled")
-update_task_button.grid(row=4, column=0, columnspan=2, pady=(8, 0), sticky='we')
 
 # ---------- 右側按鈕 ----------
 tk.Button(buttons_panel, text="匯入 CSV", command=on_click_import_csv, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 tk.Button(buttons_panel, text="匯出 CSV", command=on_click_export_csv, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 tk.Button(buttons_panel, text="刪除所選任務", command=delete_tasks, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 tk.Button(buttons_panel, text="一鍵完成任務", command=complete_task_immediately, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
-
-right_frame = tk.Frame(root)
-right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
 tk.Label(right_frame, text="任務月曆", font=("Arial", 26)).pack()
 calendar = Calendar(

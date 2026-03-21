@@ -1399,56 +1399,73 @@ forms_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 buttons_panel = tk.Frame(form_frame)
 buttons_panel.pack(side=tk.RIGHT, fill=tk.Y)
 
-new_task_frame = tk.LabelFrame(forms_panel, text="新行程", padx=10, pady=5)
-new_task_frame.pack(fill=tk.X, pady=5)
+new_task_frame = tk.LabelFrame(forms_panel, text=" ✨ 新增專屬任務 ", font=('微軟正黑體', 11, 'bold'), padx=20, pady=10)
+new_task_frame.pack(fill=tk.X, pady=10, padx=10)
 
 edit_task_frame = tk.LabelFrame(forms_panel, text="修改行程", padx=10, pady=5)
 edit_task_frame.destroy()
 
 # ---------- 新行程欄位 ----------
-tk.Label(new_task_frame, text="任務名稱", font=('Arial', 12)).grid(row=0, column=0, sticky='e', pady=3)
-new_title_entry = tk.Entry(new_task_frame, width=26, font=('Arial', 12))
-new_title_entry.grid(row=0, column=1, padx=5, pady=3, sticky='w')
+lbl_style = {"font": ('微軟正黑體', 12, 'bold'), "fg": "#444"}
+tk.Label(new_task_frame, text="任務名稱", **lbl_style).grid(row=0, column=0, sticky='e', pady=6)
+new_title_entry = tk.Entry(new_task_frame, width=28, font=('微軟正黑體', 12), relief="solid", bd=1)
+new_title_entry.grid(row=0, column=1, padx=8, pady=6, sticky='w')
 
-tk.Label(new_task_frame, text="分類", font=('Arial', 12)).grid(row=1, column=0, sticky='e', pady=3)
+tk.Label(new_task_frame, text="分類", **lbl_style).grid(row=1, column=0, sticky='e', pady=6)
 new_category_var = tk.StringVar(value=DEFAULT_CATEGORIES[0])
-new_category_combo = ttk.Combobox(new_task_frame, textvariable=new_category_var, values=DEFAULT_CATEGORIES, state="normal", width=24)
-new_category_combo.grid(row=1, column=1, padx=5, pady=3, sticky='w')
+new_category_combo = ttk.Combobox(new_task_frame, textvariable=new_category_var, values=DEFAULT_CATEGORIES, state="normal", width=26, font=('微軟正黑體', 12))
+new_category_combo.grid(row=1, column=1, padx=8, pady=6, sticky='w')
 
-tk.Label(new_task_frame, text="難度", font=('Arial', 12)).grid(row=2, column=0, sticky='e', pady=3)
+tk.Label(new_task_frame, text="難度", **lbl_style).grid(row=2, column=0, sticky='e', pady=6)
 new_difficulty_var = tk.StringVar(value=DEFAULT_DIFFICULTIES[0])
-ttk.OptionMenu(new_task_frame, new_difficulty_var, DEFAULT_DIFFICULTIES[0], *DEFAULT_DIFFICULTIES).grid(row=2, column=1, padx=5, pady=3, sticky='w')
+ttk.OptionMenu(new_task_frame, new_difficulty_var, DEFAULT_DIFFICULTIES[0], *DEFAULT_DIFFICULTIES).grid(row=2, column=1, padx=8, pady=6, sticky='w')
 
-tk.Label(new_task_frame, text="備註", font=('Arial', 12)).grid(row=3, column=0, sticky='ne', pady=3)
-new_notes_text = tk.Text(new_task_frame, height=3, width=22, font=("Arial", 12))
-new_notes_text.grid(row=3, column=1, padx=5, pady=3, sticky='w')
+tk.Label(new_task_frame, text="備註", **lbl_style).grid(row=3, column=0, sticky='ne', pady=6)
+new_notes_text = tk.Text(new_task_frame, height=3, width=28, font=("微軟正黑體", 12), relief="solid", bd=1)
+new_notes_text.grid(row=3, column=1, padx=8, pady=6, sticky='w')
 
-tk.Label(new_task_frame, text="提醒模式", font=('Arial', 12)).grid(row=4, column=0, sticky='e', pady=3)
+tk.Label(new_task_frame, text="提醒模式", **lbl_style).grid(row=4, column=0, sticky='e', pady=6)
 new_reminder_mode_var = tk.StringVar(value="遺忘曲線")
 reminder_mode_options = ["手動輸入", "遺忘曲線"]
-ttk.OptionMenu(new_task_frame, new_reminder_mode_var, reminder_mode_options[1], *reminder_mode_options).grid(row=4, column=1, padx=5, pady=3, sticky='w')
+ttk.OptionMenu(new_task_frame, new_reminder_mode_var, reminder_mode_options[1], *reminder_mode_options).grid(row=4, column=1, padx=8, pady=6, sticky='w')
 
-tk.Button(new_task_frame, text="新增任務並設定提醒", command=add_task_and_set_reminders, font=('Arial', 11), height=2).grid(row=5, column=0, columnspan=2, pady=(8, 0), sticky='we')
+btn_primary = {"font": ('微軟正黑體', 12, 'bold'), "height": 2, "bg": "#0078D7", "fg": "white", "activebackground": "#005a9e", "activeforeground": "white", "relief": "flat", "cursor": "hand2"}
+tk.Button(new_task_frame, text="＋ 新增任務並設定提醒", command=add_task_and_set_reminders, **btn_primary).grid(row=5, column=0, columnspan=2, pady=(15, 5), sticky='we')
 
 # ---------- 右側按鈕 ----------
-tk.Button(buttons_panel, text="匯入 CSV", command=on_click_import_csv, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
-tk.Button(buttons_panel, text="匯出 CSV", command=on_click_export_csv, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
-tk.Button(buttons_panel, text="刪除所選任務", command=delete_tasks, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
-tk.Button(buttons_panel, text="個人化", command=open_personalization_popup, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
-tk.Button(buttons_panel, text="一鍵完成任務", command=complete_task_immediately, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
+pad_y = 12
+btn_style = {"font": ("微軟正黑體", 11, "bold"), "height": 2, "width": 18, "bg": "#f8f9fa", "fg": "#333", "relief": "groove", "bd": 2, "activebackground": "#e2e6ea", "cursor": "hand2"}
 
-tk.Label(right_frame, text="任務月曆", font=("Arial", 26)).pack()
+tk.Button(buttons_panel, text="✅ 一鍵完成任務", command=complete_task_immediately, **{"font": ("微軟正黑體", 11, "bold"), "height": 2, "width": 18, "bg": "#e6f8ef", "fg": "#0a5c36", "relief": "groove", "bd": 2, "activebackground": "#d1e7dd", "cursor": "hand2"}).pack(pady=(20, pad_y), padx=15, fill=tk.X)
+tk.Button(buttons_panel, text="🗑 刪除所選任務", command=delete_tasks, **{"font": ("微軟正黑體", 11, "bold"), "height": 2, "width": 18, "bg": "#ffeeee", "fg": "#c00", "relief": "groove", "bd": 2, "activebackground": "#ffdddd", "cursor": "hand2"}).pack(pady=pad_y, padx=15, fill=tk.X)
+tk.Button(buttons_panel, text="🖼 個人化背景", command=open_personalization_popup, **{"font": ("微軟正黑體", 11, "bold"), "height": 2, "width": 18, "bg": "#f0f8ff", "fg": "#0056b3", "relief": "groove", "bd": 2, "activebackground": "#e0f0ff", "cursor": "hand2"}).pack(pady=pad_y, padx=15, fill=tk.X)
+tk.Button(buttons_panel, text="📥 匯入 CSV", command=on_click_import_csv, **btn_style).pack(pady=pad_y, padx=15, fill=tk.X)
+tk.Button(buttons_panel, text="📤 匯出 CSV", command=on_click_export_csv, **btn_style).pack(pady=pad_y, padx=15, fill=tk.X)
+
+tk.Label(right_frame, text="📅 任務月曆", font=("微軟正黑體", 22, "bold"), fg="#333333").pack(pady=(0, 10))
 calendar = Calendar(
     right_frame,
     selectmode='day',
     date_pattern='yyyy-mm-dd',
-    font=('Arial', 16),
+    font=('微軟正黑體', 14),
     showweeknumbers=False,
-    disableddaybackground='white',
-    background='gray',
-    borderwidth=2
+    borderwidth=1,
+    background='#0078D7',
+    foreground='white',
+    headersbackground='#f0f0f0',
+    headersforeground='#333333',
+    normalbackground='white',
+    normalforeground='#333333',
+    weekendbackground='#fff0f0',
+    weekendforeground='#c00',
+    othermonthforeground='#cccccc',
+    othermonthbackground='white',
+    othermonthweforeground='#ffcccc',
+    othermonthwebackground='#fff0f0',
+    selectbackground='#005a9e',
+    selectforeground='white'
 )
-calendar.pack(pady=10, ipadx=50, ipady=30, expand=True, fill='both')
+calendar.pack(pady=10, ipadx=40, ipady=30, expand=True, fill='both')
 
 
 

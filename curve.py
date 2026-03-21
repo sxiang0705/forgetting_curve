@@ -2,26 +2,15 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from tkcalendar import Calendar
 from tkcalendar import DateEntry
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib import rcParams
-from datetime import datetime
 import sqlite3
 import datetime
-import threading
 import time
-import matplotlib
-from matplotlib import rcParams
-import platform
-import smtplib
-from email.mime.text import MIMEText
-from email.message import EmailMessage
 import os
 import csv
 import hashlib
 
 DB_PATH = "reminder.db"
-popop = None
+popup = None
 db_importing = False
 
 DEFAULT_CATEGORIES = ["英文單字", "程式技能", "工作備忘", "日常學習"]
@@ -70,7 +59,7 @@ def export_db_to_csv(csv_path: str) -> None:
         "remind_time",
         "reminded",
     ]
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+    with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -124,7 +113,7 @@ def import_db_from_csv(csv_path: str) -> None:
             os.remove(DB_PATH)
         init_db()
 
-        with open(csv_path, "r", newline="", encoding="utf-8") as f:
+        with open(csv_path, "r", newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
 
@@ -196,8 +185,21 @@ def on_click_import_csv():
 
 
 def on_click_export_csv():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT MIN(start_time), MAX(start_time) FROM tasks")
+    row = cursor.fetchone()
+    conn.close()
+
+    default_name = "forgetting_curve"
+    if row and row[0] and row[1]:
+        first = row[0][:10].replace("-", "")
+        last = row[1][:10].replace("-", "")
+        default_name = f"forgetting_curve_{first}_{last}"
+
     csv_path = filedialog.asksaveasfilename(
         title="匯出資料成 CSV",
+        initialfile=default_name,
         defaultextension=".csv",
         filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
     )
@@ -379,6 +381,10 @@ def open_reminder_popup(task_id, mode_from_main="手動輸入"):
             times = [base_dt + datetime.timedelta(days=d) for d in days]
 
         times = sorted(set(times))
+
+        # 若是更新現有任務的提醒，先清空舊的 reminders
+        cursor.execute("DELETE FROM reminders WHERE task_id = ?", (task_id,))
+
         for remind_dt in times:
             if remind_dt > datetime.datetime.now():
                 cursor.execute("INSERT INTO reminders (task_id, remind_time) VALUES (?, ?)", (task_id, remind_dt.isoformat()))
@@ -671,7 +677,7 @@ def get_categories_for_combo():
 def open_task_edit_popup(task_id: int):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT title, category, difficulty, notes FROM tasks WHERE id = ?", (task_id,))
+    cursor.execute("SELECT title, category, difficulty, notes, reminder_method FROM tasks WHERE id = ?", (task_id,))
     row = cursor.fetchone()
     conn.close()
 
@@ -679,7 +685,7 @@ def open_task_edit_popup(task_id: int):
         messagebox.showwarning("提示", "找不到該任務")
         return
 
-    title_val, category_val, difficulty_val, notes_val = row
+    title_val, category_val, difficulty_val, notes_val, method_val = row
 
     popup = tk.Toplevel()
     popup.title("修改任務資訊")
@@ -735,8 +741,17 @@ def open_task_edit_popup(task_id: int):
         load_tasks()
         popup.destroy()
 
-    tk.Button(popup, text="儲存修改", command=save, font=("Arial", 11), height=2).grid(
-        row=4, column=0, columnspan=2, sticky="we", padx=10, pady=(12, 0)
+    # 修改儲存鍵貼齊中間（加寬並置中）
+    tk.Button(popup, text="儲存修改", command=save, font=("Arial", 11), height=2, width=15).grid(
+        row=4, column=0, columnspan=2, pady=(16, 4)
+    )
+
+    def reset_reminders():
+        popup.destroy()
+        open_reminder_popup(task_id, method_val or "遺忘曲線")
+
+    tk.Button(popup, text="重設提醒時間", command=reset_reminders, font=("Arial", 11), height=2, width=15).grid(
+        row=5, column=0, columnspan=2, pady=(4, 10)
     )
 
 
@@ -756,31 +771,30 @@ def on_task_double_click(event):
 
 
 def reminder_checker():
-    while True:
-        if db_importing:
-            time.sleep(1)
-            continue
+    if db_importing:
+        root.after(1000, reminder_checker)
+        return
 
-        try:
-            now = datetime.datetime.now().isoformat()
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT r.id, t.title, r.remind_time FROM reminders r
-                JOIN tasks t ON r.task_id = t.id
-                WHERE r.reminded = 0 AND r.remind_time <= ?
-            ''', (now,))
-            rows = cursor.fetchall()
-            conn.close()
-        except Exception:
-            # DB 可能被 CSV 匯入覆蓋中，先避免 thread 崩潰
-            time.sleep(3)
-            continue
+    try:
+        now = datetime.datetime.now().isoformat()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT r.id, t.title, r.remind_time FROM reminders r
+            JOIN tasks t ON r.task_id = t.id
+            WHERE r.reminded = 0 AND r.remind_time <= ?
+        ''', (now,))
+        rows = cursor.fetchall()
+        conn.close()
+    except Exception:
+        # DB 可能被 CSV 匯入覆蓋中，先延後執行避免錯誤
+        root.after(3000, reminder_checker)
+        return
 
-        for reminder_id, title, _remind_time in rows:
-            threading.Thread(target=show_reminder, args=(title, reminder_id), daemon=True).start()
+    for reminder_id, title, _remind_time in rows:
+        show_reminder(title, reminder_id)
 
-        time.sleep(30)
+    root.after(30000, reminder_checker)
 
 
 def show_reminder(title, reminder_id):
@@ -931,327 +945,6 @@ def on_calendar_select(event):
         tk.Button(frame, text="完成", command=lambda rid=reminder_id: mark_complete(rid)).pack(side="right", padx=2)
         tk.Button(frame, text="推延", command=lambda tid=task_id: postpone_reminders(tid)).pack(side="right")
 
-def set_chinese_font():
-    system = platform.system()
-    if system == 'Windows':
-        rcParams['font.family'] = 'Microsoft JhengHei'  # 微軟正黑體
-    elif system == 'Darwin':  # macOS
-        rcParams['font.family'] = 'PingFang TC'  # 蘋方
-    else:  # Linux 或其他
-        rcParams['font.family'] = 'Noto Sans CJK TC'  # 安裝 Noto 字體
-
-    rcParams['axes.unicode_minus'] = False  # 避免負號顯示錯誤
-
-#-----------------------------------------------------圖表繪製---------------------------------------------------------
-# 周任務達成度圓餅圖
-def show_weekly_pie_chart():
-    messagebox.showinfo("功能已移除", "本週完成率圖表功能已移除。")
-    return
-    set_chinese_font() # 設定中文字體，避免圖表中文字亂碼
-    today = datetime.datetime.today()  # 獲取今天的日期
-    start_of_week = today - datetime.timedelta(days=today.weekday())   # 計算本週一的日期
-    end_of_week = start_of_week + datetime.timedelta(days=7)    # 計算本週結束日期（下週一）
-
-    # 連接資料庫，查詢本週所有提醒的完成狀態
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT reminded FROM reminders
-        WHERE remind_time BETWEEN ? AND ?
-    ''', (start_of_week.isoformat(), end_of_week.isoformat()))
-    rows = cursor.fetchall()
-    conn.close()
-
-    # 統計已完成與未完成的提醒數量
-    completed = sum(1 for (reminded,) in rows if reminded == 1)
-    incomplete = sum(1 for (reminded,) in rows if reminded == 0)
-    
-    labels = ['已完成', '未完成']  # 圖表標籤
-    sizes = [completed, incomplete]  # 各區塊數量
-    colors = ['#4CAF50', '#f0ad4e']  # 各區塊顏色（綠色、橘色）
-
-    # 建立圖表視窗
-    chart_win = tk.Toplevel()
-    chart_win.title("本週任務完成率")
-    chart_win.geometry("500x400")
-
-    # 建立圓餅圖
-    fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
-    ax.set_title("本週任務完成度")
-    ax.axis('equal')  # 保持圓形
-
-    # 將 matplotlib 圖表嵌入到 Tkinter 視窗中
-    canvas = FigureCanvasTkAgg(fig, master=chart_win)
-    canvas.draw()
-    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-# 月任務達成度圓餅圖
-def show_monthly_pie_chart():
-    messagebox.showinfo("功能已移除", "本月完成率圖表功能已移除。")
-    return
-    set_chinese_font()
-    today = datetime.datetime.today()
-    start_of_month = today.replace(day=1)
-    # 下個月1日 - 1天 = 本月最後一天
-    if start_of_month.month == 12:
-        next_month = start_of_month.replace(year=start_of_month.year + 1, month=1, day=1)
-    else:
-        next_month = start_of_month.replace(month=start_of_month.month + 1, day=1)
-    end_of_month = next_month - datetime.timedelta(days=1)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT reminded FROM reminders
-        WHERE remind_time BETWEEN ? AND ?
-    ''', (start_of_month.isoformat(), next_month.isoformat()))
-    rows = cursor.fetchall()
-    conn.close()
-
-    completed = sum(1 for (reminded,) in rows if reminded == 1)
-    incomplete = sum(1 for (reminded,) in rows if reminded == 0)
-
-    labels = ['已完成', '未完成']
-    sizes = [completed, incomplete]
-    colors = ['#4CAF50', '#f0ad4e']
-
-    chart_win = tk.Toplevel()
-    chart_win.title("本月任務完成率")
-    chart_win.geometry("500x400")
-
-    fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
-    ax.set_title(f"{start_of_month.strftime('%Y年%m月')} 完成率")
-    ax.axis('equal')
-
-    canvas = FigureCanvasTkAgg(fig, master=chart_win)
-    canvas.draw()
-    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-# 四周完成度長條圖
-def show_weekly_bar_chart():
-    messagebox.showinfo("功能已移除", "近四週完成度圖表功能已移除。")
-    return
-    set_chinese_font()  # 加上中文字體設定
-
-    today = datetime.datetime.today()
-    week_data = []
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    for i in range(4):  # 最近 4 週
-        start = (today - datetime.timedelta(days=today.weekday())) - datetime.timedelta(weeks=i)
-        end = start + datetime.timedelta(days=6)
-        cursor.execute('''
-            SELECT reminded FROM reminders
-            WHERE remind_time BETWEEN ? AND ?
-        ''', (start.isoformat(), (end + datetime.timedelta(days=1)).isoformat()))
-        rows = cursor.fetchall()
-        completed = sum(1 for (reminded,) in rows if reminded == 1)
-        total = len(rows)
-        percent = (completed / total * 100) if total > 0 else 0
-
-        label = f"{start.month}/{start.day}~{end.month}/{end.day}"
-        week_data.append((label, percent))
-
-    conn.close()
-    week_data.reverse()  # 最新在右側
-
-    labels, percents = zip(*week_data)
-    chart_win = tk.Toplevel()
-    chart_win.title("最近四週完成趨勢")
-    chart_win.geometry("640x400")
-
-    fig, ax = plt.subplots(figsize=(7, 4), dpi=100)
-    bars = ax.bar(labels, percents, color='#5bc0de')
-    ax.set_ylim(0, 100)
-    ax.set_ylabel('完成率 (%)')
-    ax.set_title('最近四週任務完成率變化')
-    ax.bar_label(bars, fmt='%.1f%%')
-
-    canvas = FigureCanvasTkAgg(fig, master=chart_win)
-    canvas.draw()
-    canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-#---------------------------------------郵件圖表繪製-------------------------------------------------------
-# 周任務達成度圓餅圖
-def generate_weekly_pie_chart():
-    messagebox.showinfo("功能已移除", "寄信報表所需的週圖表生成功能已移除。")
-    return ""
-    set_chinese_font() # 設定中文字體，避免圖表中文字亂碼
-    today = datetime.datetime.today()  # 獲取今天的日期
-    start_of_week = today - datetime.timedelta(days=today.weekday())   # 計算本週一的日期
-    end_of_week = start_of_week + datetime.timedelta(days=7)    # 計算本週結束日期（下週一）
-
-    # 連接資料庫，查詢本週所有提醒的完成狀態
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT reminded FROM reminders
-        WHERE remind_time BETWEEN ? AND ?
-    ''', (start_of_week.isoformat(), end_of_week.isoformat()))
-    rows = cursor.fetchall()
-    conn.close()
-
-    # 統計已完成與未完成的提醒數量
-    completed = sum(1 for (reminded,) in rows if reminded == 1)
-    incomplete = sum(1 for (reminded,) in rows if reminded == 0)
-    
-    labels = ['已完成', '未完成']  # 圖表標籤
-    sizes = [completed, incomplete]  # 各區塊數量
-    colors = ['#4CAF50', '#f0ad4e']  # 各區塊顏色（綠色、橘色）
-
-    # 建立圓餅圖
-    fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
-    ax.set_title("本週任務完成度")
-    ax.axis('equal')  # 保持圓形
-    
-    # 儲存圖片
-    image_path = os.path.join(os.getcwd(), 'weekly_pie_chart.png')
-    fig.savefig(image_path, transparent=True, bbox_inches='tight', pad_inches=1)
-    print(f"圖片已儲存到 {image_path}")
-    
-    return image_path
-
-# 月任務達成度圓餅圖
-def generate_monthly_pie_chart():
-    messagebox.showinfo("功能已移除", "寄信報表所需的月圖表生成功能已移除。")
-    return ""
-    set_chinese_font()
-    today = datetime.datetime.today()
-    start_of_month = today.replace(day=1)
-    # 下個月1日 - 1天 = 本月最後一天
-    if start_of_month.month == 12:
-        next_month = start_of_month.replace(year=start_of_month.year + 1, month=1, day=1)
-    else:
-        next_month = start_of_month.replace(month=start_of_month.month + 1, day=1)
-    end_of_month = next_month - datetime.timedelta(days=1)
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT reminded FROM reminders
-        WHERE remind_time BETWEEN ? AND ?
-    ''', (start_of_month.isoformat(), next_month.isoformat()))
-    rows = cursor.fetchall()
-    conn.close()
-
-    completed = sum(1 for (reminded,) in rows if reminded == 1)
-    incomplete = sum(1 for (reminded,) in rows if reminded == 0)
-
-    labels = ['已完成', '未完成']
-    sizes = [completed, incomplete]
-    colors = ['#4CAF50', '#f0ad4e']
-
-
-    fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
-    ax.set_title(f"{start_of_month.strftime('%Y年%m月')} 完成率")
-    ax.axis('equal')
-    
-    # 儲存圖片
-    image_path = os.path.join(os.getcwd(), 'monthly_pie_chart.png')
-    fig.savefig(image_path, transparent=True, bbox_inches='tight', pad_inches=1)
-    print(f"圖片已儲存到 {image_path}")
-    
-    return image_path
-    
-# 四周完成度長條圖
-def generate_weekly_bar_chart():
-    messagebox.showinfo("功能已移除", "寄信報表所需的近四週長條圖生成功能已移除。")
-    return ""
-    set_chinese_font()  # 加上中文字體設定
-
-    today = datetime.datetime.today()
-    week_data = []
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    for i in range(4):  # 最近 4 週
-        start = (today - datetime.timedelta(days=today.weekday())) - datetime.timedelta(weeks=i)
-        end = start + datetime.timedelta(days=6)
-        cursor.execute('''
-            SELECT reminded FROM reminders
-            WHERE remind_time BETWEEN ? AND ?
-        ''', (start.isoformat(), (end + datetime.timedelta(days=1)).isoformat()))
-        rows = cursor.fetchall()
-        completed = sum(1 for (reminded,) in rows if reminded == 1)
-        total = len(rows)
-        percent = (completed / total * 100) if total > 0 else 0
-
-        label = f"{start.month}/{start.day}~{end.month}/{end.day}"
-        week_data.append((label, percent))
-
-    conn.close()
-    week_data.reverse()  # 最新在右側
-
-    labels, percents = zip(*week_data)
-
-    fig, ax = plt.subplots(figsize=(7, 4), dpi=100)
-    bars = ax.bar(labels, percents, color='#5bc0de')
-    ax.set_ylim(0, 100)
-    ax.set_ylabel('完成率 (%)')
-    ax.set_title('最近四週任務完成率變化')
-    ax.bar_label(bars, fmt='%.1f%%')
-
-    #儲存圖片
-    image_path = os.path.join(os.getcwd(), 'weekly_bar_chart.png')
-    fig.savefig(image_path, transparent=True, bbox_inches='tight', pad_inches=1)
-    print(f"圖片已儲存到 {image_path}")
-    
-    return image_path
-
-def send_selected_report():
-    messagebox.showinfo("功能已移除", "寄送報表功能已移除。")
-    return
-    report_type = report_type_var.get()  # 讀取選擇
-    if report_type == "週報圖":
-        image_path =  generate_weekly_pie_chart()
-        subject = "本週任務完成度報告"
-        body = "請查收本週任務完成度報告（週報圖）。"
-    elif report_type == "月報圖":
-        image_path =  generate_monthly_pie_chart()
-        subject = "本月任務完成度報告"
-        body = "請查收本月任務完成度報告（月報圖）。"
-    elif report_type == "近四週圖":
-        image_path =  generate_weekly_bar_chart()
-        subject = "近四週任務完成度報告"
-        body = "請查收近四週任務完成度報告（近四週圖）。"
-    else:
-        print("未知的報告類型")
-        return  
-    
-    #寄送郵件
-    send_email_with_attachment(subject, body, 'a1123308@mail.nuk.edu.tw', image_path)
-#------------------------------寄送郵件----------------------------------
-def send_email_with_attachment(subject, body, to_email, attachment_path):
-    messagebox.showinfo("功能已移除", "寄送郵件功能已移除。")
-    return
-    from_email = "a1113308@mail.nuk.edu.tw"
-    password = "dxdn yrec nhet vzeo"
-
-    msg = EmailMessage()
-    msg['Subject'] = subject
-    msg['From'] = from_email
-    msg['To'] = to_email
-    msg.set_content(body)
-
-    # 附加圖片
-    with open(attachment_path, 'rb') as f:
-        file_data = f.read()
-        file_name = os.path.basename(attachment_path)
-    msg.add_attachment(file_data, maintype='image', subtype='png', filename=file_name)
-
-    # 寄送郵件
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
-        smtp.login(from_email, password)
-        smtp.send_message(msg)
-    messagebox.showinfo("成功", "郵件寄送成功")
-#------------------------------------------------------------------------------
 
 # GUI 啟動
 root = tk.Tk()
@@ -1351,5 +1044,5 @@ calendar.bind("<<CalendarSelected>>", on_calendar_select)
 init_db()
 load_tasks()
 tag_calendar_by_category()
-threading.Thread(target=reminder_checker, daemon=True).start()
+root.after(1000, reminder_checker)
 root.mainloop()

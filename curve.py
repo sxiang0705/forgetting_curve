@@ -13,6 +13,145 @@ import csv
 import hashlib
 
 DB_PATH = "reminder.db"
+
+class TransparentTaskTree(tk.Canvas):
+    def __init__(self, master, columns, **kwargs):
+        kwargs.pop("show", None)
+        kwargs.pop("selectmode", None)
+        super().__init__(master, bg="white", highlightthickness=0, **kwargs)
+        self.columns = columns
+        self.col_widths = [50, 220, 90, 110, 200]
+        self.header_text = ["ID", "任務名稱", "分類", "開始時間", "進度"]
+        self.row_h = 46
+        self.items = []
+        self.selected_item = None
+        
+        self.bg_photo = None
+        self.last_pil_img = None
+        self.bg_canvas_id = self.create_image(0, 0, anchor="nw")
+        
+        from PIL import Image, ImageTk
+        hdr_img = Image.new('RGBA', (1500, self.row_h), (50, 50, 50, 200))
+        row_img = Image.new('RGBA', (1500, self.row_h), (255, 255, 255, 220))
+        sel_img = Image.new('RGBA', (1500, self.row_h), (0, 120, 215, 180))
+        
+        self.hdr_photo = ImageTk.PhotoImage(hdr_img)
+        self.row_photo = ImageTk.PhotoImage(row_img)
+        self.sel_photo = ImageTk.PhotoImage(sel_img)
+        
+        self.bind("<Button-1>", self.on_click)
+        self.bind("<Double-1>", self.on_double_click)
+        self.bind("<MouseWheel>", self.on_mousewheel)
+        self.bind("<Configure>", self.on_resize)
+        
+        self.scroll_y = 0
+        self.max_scroll = 0
+
+    def heading(self, col, text):
+        pass 
+
+    def insert(self, parent, index, values):
+        self.items.append({'values': values})
+        self.draw_grid()
+
+    def delete(self, *args):
+        if not args:
+            self.items.clear()
+            self.selected_item = None
+            self.draw_grid()
+        else:
+            super().delete(*args)
+
+    def get_children(self):
+        return []
+        
+    def identify_row(self, y):
+        row = int((y - self.scroll_y - self.row_h) / self.row_h)
+        if 0 <= row < len(self.items):
+            return row
+        return None
+        
+    def item(self, iid):
+        return self.items[iid]
+        
+    def selection(self):
+        if self.selected_item is not None:
+            return [self.selected_item]
+        return []
+        
+    def on_click(self, event):
+        row = int((event.y - self.scroll_y - self.row_h) / self.row_h)
+        if 0 <= row < len(self.items):
+            self.selected_item = row
+            self.draw_grid()
+            self.event_generate('<<TreeviewSelect>>')
+            
+    def on_double_click(self, event):
+        row = int((event.y - self.scroll_y - self.row_h) / self.row_h)
+        if 0 <= row < len(self.items):
+            self.selected_item = row
+            self.draw_grid()
+            self.event_generate('<Double-1>')
+            
+    def on_mousewheel(self, event):
+        content_h = len(self.items) * self.row_h + self.row_h
+        win_h = self.winfo_height()
+        if content_h > win_h:
+            try:
+                delta = int(-1*(event.delta/120)) * 40
+            except:
+                delta = 0
+            self.scroll_y -= delta
+            min_y = win_h - content_h
+            if self.scroll_y < min_y: self.scroll_y = min_y
+            if self.scroll_y > 0: self.scroll_y = 0
+            self.draw_grid()
+            
+    def set_background(self, pil_img):
+        self.last_pil_img = pil_img
+        self.resize_bg()
+        
+    def on_resize(self, event):
+        self.resize_bg()
+        self.draw_grid()
+        
+    def resize_bg(self):
+        if not self.last_pil_img: 
+            self.itemconfig(self.bg_canvas_id, image="")
+            return
+            
+        w, h = self.winfo_width(), self.winfo_height()
+        if w > 10 and h > 10:
+            from PIL import ImageOps, ImageTk, Image
+            img = ImageOps.fit(self.last_pil_img, (w, h), Image.Resampling.LANCZOS)
+            self.bg_photo = ImageTk.PhotoImage(img)
+            self.itemconfig(self.bg_canvas_id, image=self.bg_photo)
+
+    def draw_grid(self):
+        self.delete("grid_elem")
+        y = self.scroll_y
+        x = 0
+        
+        self.create_image(0, y, anchor="nw", image=self.hdr_photo, tags="grid_elem")
+        for i, hd in enumerate(self.header_text):
+            self.create_text(x + 15, y + self.row_h/2, text=hd, anchor="w", font=("微軟正黑體", 11, "bold"), fill="white", tags="grid_elem")
+            x += self.col_widths[i]
+            
+        y += self.row_h
+        
+        for idx, item in enumerate(self.items):
+            if y + self.row_h > 0 and y < self.winfo_height():
+                img = self.sel_photo if idx == self.selected_item else self.row_photo
+                self.create_image(0, y, anchor="nw", image=img, tags="grid_elem")
+                
+                x = 0
+                for i, val in enumerate(item['values']):
+                    color = "white" if idx == self.selected_item else "black"
+                    wrap_w = self.col_widths[i] - 15 if i != 4 else 350
+                    self.create_text(x + 15, y + self.row_h/2, text=str(val), anchor="w", font=("微軟正黑體", 11), fill=color, width=wrap_w, tags="grid_elem")
+                    x += self.col_widths[i]
+            y += self.row_h
+
 BG_DIR = "backgrounds"
 bg_image_keep_ref = None
 popup = None
@@ -617,8 +756,7 @@ def refresh_filter_menu():
 
 def load_tasks():
     refresh_filter_menu()
-    for row in task_tree.get_children():
-        task_tree.delete(row)
+    task_tree.delete()
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -652,7 +790,7 @@ def load_tasks():
             progress = f"{bar} {done}/{total} ({percent:.0f}%)"
         else:
             progress = "-"
-        formatted = datetime.datetime.fromisoformat(start_time).strftime("%Y年%m月%d日 %H點%M分")
+        formatted = datetime.datetime.fromisoformat(start_time).strftime("%Y-%m-%d\n%H:%M")
         task_tree.insert('', 'end', values=(task_id, title, category, formatted, progress))
     
     conn.close()
@@ -779,7 +917,7 @@ def open_task_edit_popup(task_id: int):
 def on_task_double_click(event):
     # 由滑鼠位置找出對應列，再取出 task_id
     row_id = task_tree.identify_row(event.y)
-    if not row_id:
+    if row_id is None:
         return
     values = task_tree.item(row_id).get("values", [])
     if not values:
@@ -1004,17 +1142,7 @@ def sync_bg_overlay(event=None):
         bg_overlay_win.lift()
 
 
-bg_label = None
-
-def init_bg_label():
-    global bg_label
-    if bg_label is None:
-        bg_label = tk.Label(root)
-        bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        bg_label.lower()
-
 def load_background(is_startup=False):
-    global bg_image_keep_ref, bg_label
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM settings WHERE key='random_startup_bg'")
@@ -1035,21 +1163,15 @@ def load_background(is_startup=False):
         bg_record = cursor.fetchone()
     conn.close()
     
-    init_bg_label()
-    
     if bg_record and os.path.exists(bg_record[1]):
         try:
-            from PIL import Image, ImageTk, ImageOps
+            from PIL import Image
             pil_img = Image.open(bg_record[1])
-            screen_w = root.winfo_screenwidth()
-            screen_h = root.winfo_screenheight()
-            pil_img = ImageOps.fit(pil_img, (screen_w, screen_h), Image.Resampling.LANCZOS)
-            bg_image_keep_ref = ImageTk.PhotoImage(pil_img)
-            bg_label.config(image=bg_image_keep_ref)
+            task_tree.set_background(pil_img)
         except Exception as e:
             print("載入背景失敗:", e)
     else:
-        bg_label.config(image='')
+        task_tree.set_background(None)
 
 def open_personalization_popup():
     ensure_bg_dir()
@@ -1246,7 +1368,7 @@ root.minsize(950, 560)
 selected_task_id = tk.IntVar(value=-1)
 paned = ttk.Panedwindow(root, orient="horizontal")
 # 增加 padding 讓背景圖片像畫框一樣露出來，否則會被完全遮擋
-paned.pack(fill=tk.BOTH, expand=True, padx=60, pady=60)
+paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
 left_frame = tk.Frame(paned)
 right_frame = tk.Frame(paned)
@@ -1258,7 +1380,7 @@ filter_var = tk.StringVar(value="全部")
 filter_options = ["全部", "已完成任務"]
 filter_menu = ttk.OptionMenu(left_frame, filter_var, filter_options[0], *filter_options, command=lambda _: load_tasks())
 filter_menu.pack(pady=5)
-task_tree = ttk.Treeview(left_frame, columns=('ID', 'Title', 'Category', 'Start Time', 'Progress'), show='headings', selectmode='extended')
+task_tree = TransparentTaskTree(left_frame, columns=('ID', 'Title', 'Category', 'Start Time', 'Progress'), show='headings', selectmode='extended')
 task_tree.heading('ID', text='ID')
 task_tree.heading('Title', text='任務名稱')
 task_tree.heading('Category', text='分類')

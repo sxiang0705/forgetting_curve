@@ -1357,8 +1357,20 @@ def open_personalization_popup():
 # --- 背景個人化功能結束 ---
 
 # GUI 啟動
+def resource_path(relative_path):
+    import sys
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 root = tk.Tk()
 root.title("遺忘曲線提醒工具")
+try:
+    root.iconbitmap(resource_path("IMG_2832-001.ico"))
+except Exception:
+    pass
 screen_width = root.winfo_screenwidth()
 root.geometry(f"{min(1200, max(900, screen_width - 80))}x650")
 root.minsize(950, 560)

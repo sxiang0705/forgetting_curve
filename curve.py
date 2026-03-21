@@ -3,6 +3,9 @@ from tkinter import ttk, messagebox, filedialog
 from tkcalendar import Calendar
 from tkcalendar import DateEntry
 import sqlite3
+import shutil
+import random
+from PIL import Image, ImageTk, ImageOps
 import datetime
 import time
 import os
@@ -10,6 +13,8 @@ import csv
 import hashlib
 
 DB_PATH = "reminder.db"
+BG_DIR = "backgrounds"
+bg_image_keep_ref = None
 popup = None
 db_importing = False
 
@@ -237,6 +242,22 @@ def init_db():
             remind_time TEXT,
             reminded INTEGER DEFAULT 0,
             FOREIGN KEY(task_id) REFERENCES tasks(id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS backgrounds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT,
+            path TEXT,
+            upload_time TEXT,
+            is_active INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
         )
     ''')
     conn.commit()
@@ -946,6 +967,255 @@ def on_calendar_select(event):
         tk.Button(frame, text="推延", command=lambda tid=task_id: postpone_reminders(tid)).pack(side="right")
 
 
+
+# --- 背景個人化功能開始 ---
+def ensure_bg_dir():
+    if not os.path.exists(BG_DIR):
+        os.makedirs(BG_DIR)
+
+
+bg_overlay_win = None
+bg_overlay_label = None
+
+def get_bg_opacity():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key='bg_opacity'")
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return float(row[0])
+    return 0.3
+
+def sync_bg_overlay(event=None):
+    if bg_overlay_win and bg_overlay_win.winfo_exists() and root.winfo_exists():
+        if root.state() == 'iconic':
+            if bg_overlay_win.state() != 'withdrawn':
+                bg_overlay_win.withdraw()
+            return
+        if bg_overlay_win.state() == 'withdrawn':
+            bg_overlay_win.deiconify()
+        
+        w = root.winfo_width()
+        h = root.winfo_height()
+        x = root.winfo_rootx()
+        y = root.winfo_rooty()
+        bg_overlay_win.geometry(f"{w}x{h}+{x}+{y}")
+        bg_overlay_win.lift()
+
+
+bg_label = None
+
+def init_bg_label():
+    global bg_label
+    if bg_label is None:
+        bg_label = tk.Label(root)
+        bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        bg_label.lower()
+
+def load_background(is_startup=False):
+    global bg_image_keep_ref, bg_label
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key='random_startup_bg'")
+    rand_setting = cursor.fetchone()
+    is_random = (rand_setting and rand_setting[0] == '1')
+    
+    bg_record = None
+    if is_random and is_startup:
+        cursor.execute("SELECT id, path FROM backgrounds ORDER BY RANDOM() LIMIT 1")
+        bg_record = cursor.fetchone()
+        if bg_record:
+            cursor.execute("UPDATE backgrounds SET is_active = 0")
+            cursor.execute("UPDATE backgrounds SET is_active = 1 WHERE id = ?", (bg_record[0],))
+            conn.commit()
+    
+    if not bg_record:
+        cursor.execute("SELECT id, path FROM backgrounds WHERE is_active = 1")
+        bg_record = cursor.fetchone()
+    conn.close()
+    
+    init_bg_label()
+    
+    if bg_record and os.path.exists(bg_record[1]):
+        try:
+            from PIL import Image, ImageTk, ImageOps
+            pil_img = Image.open(bg_record[1])
+            screen_w = root.winfo_screenwidth()
+            screen_h = root.winfo_screenheight()
+            pil_img = ImageOps.fit(pil_img, (screen_w, screen_h), Image.Resampling.LANCZOS)
+            bg_image_keep_ref = ImageTk.PhotoImage(pil_img)
+            bg_label.config(image=bg_image_keep_ref)
+        except Exception as e:
+            print("載入背景失敗:", e)
+    else:
+        bg_label.config(image='')
+
+def open_personalization_popup():
+    ensure_bg_dir()
+    pop = tk.Toplevel(root)
+    pop.title("個人化背景設定")
+    pop.geometry("600x550")
+    pop.attributes("-topmost", True)
+    
+    ctrl_frame = tk.Frame(pop)
+    ctrl_frame.pack(fill=tk.X, padx=10, pady=10)
+    
+    def on_upload():
+        filepath = filedialog.askopenfilename(
+            parent=pop,
+            title="選擇背景圖片",
+            filetypes=[("Image files", "*.jpg;*.jpeg;*.png;*.webp")]
+        )
+        if not filepath: return
+        
+        if os.path.getsize(filepath) > 20 * 1024 * 1024:
+            messagebox.showerror("上傳失敗", "圖片檔案過大，請選擇小於 20MB 的圖片", parent=pop)
+            return
+            
+        filename = os.path.basename(filepath)
+        ext = os.path.splitext(filename)[1]
+        unique_name = f"bg_{int(time.time())}{ext}"
+        dest_path = os.path.join(BG_DIR, unique_name)
+        
+        try:
+            shutil.copy(filepath, dest_path)
+        except Exception as e:
+            messagebox.showerror("上傳失敗", f"無法複製圖片: {e}", parent=pop)
+            return
+            
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT INTO backgrounds (filename, path, upload_time, is_active) VALUES (?, ?, ?, 0)",
+                  (filename, dest_path, datetime.datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+        refresh_list()
+        messagebox.showinfo("成功", "圖片上傳成功！", parent=pop)
+        
+    tk.Button(ctrl_frame, text="上傳新圖片", command=on_upload, font=("Arial", 11), bg="#4CAF50", fg="white").pack(side=tk.LEFT, padx=5)
+
+
+    
+    rand_var = tk.IntVar()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key='random_startup_bg'")
+    r = c.fetchone()
+    rand_var.set(1 if (r and r[0] == '1') else 0)
+    conn.close()
+    
+    def toggle_random():
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        val = '1' if rand_var.get() == 1 else '0'
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('random_startup_bg', ?)", (val,))
+        conn.commit()
+        conn.close()
+        
+    tk.Checkbutton(ctrl_frame, text="啟動程式時隨機切換背景", variable=rand_var, command=toggle_random, font=("Arial", 11)).pack(side=tk.RIGHT, padx=5)
+    
+    list_frame = tk.Frame(pop)
+    list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+    
+    canvas = tk.Canvas(list_frame)
+    scrollbar = tk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas)
+    
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        )
+    )
+    
+    canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.bind('<Configure>', lambda e: canvas.itemconfig(canvas_window, width=e.width))
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+    
+    pop.thumbnails = []
+    
+    def set_active(bg_id):
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("UPDATE backgrounds SET is_active = 0")
+        c.execute("UPDATE backgrounds SET is_active = 1 WHERE id = ?", (bg_id,))
+        conn.commit()
+        conn.close()
+        # 不要在設定背景時觸發隨機，傳入 is_startup=False
+        load_background(is_startup=False)
+        refresh_list()
+        
+    def delete_bg(bg_id, bg_path, is_active):
+        if messagebox.askyesno("確認刪除", "確定要刪除這張背景圖片嗎？", parent=pop):
+            try:
+                if os.path.exists(bg_path):
+                    os.remove(bg_path)
+            except Exception as e:
+                print("刪除檔案失敗:", e)
+                
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("DELETE FROM backgrounds WHERE id = ?", (bg_id,))
+            if is_active:
+                c.execute("SELECT id FROM backgrounds LIMIT 1")
+                nxt = c.fetchone()
+                if nxt:
+                    c.execute("UPDATE backgrounds SET is_active = 1 WHERE id = ?", (nxt[0],))
+            conn.commit()
+            conn.close()
+            
+            if is_active:
+                load_background(is_startup=False)
+            refresh_list()
+    
+    def refresh_list():
+        for widget in scrollable_frame.winfo_children():
+            widget.destroy()
+        pop.thumbnails.clear()
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT id, filename, path, upload_time, is_active FROM backgrounds ORDER BY id DESC")
+        rows = c.fetchall()
+        conn.close()
+        
+        for idx, row in enumerate(rows):
+            bg_id, fname, path, utime, is_active = row
+            item_frame = tk.Frame(scrollable_frame, bd=1, relief="solid", padx=5, pady=5, bg="#e0f7fa" if is_active else "white")
+            item_frame.pack(fill=tk.X, pady=4, padx=4)
+            
+            try:
+                img = Image.open(path)
+                # handle proper rotation if exist in exif
+                img.thumbnail((120, 80))
+                photo = ImageTk.PhotoImage(img)
+                pop.thumbnails.append(photo)
+                tk.Label(item_frame, image=photo, bg="gray").pack(side=tk.LEFT, padx=5)
+            except:
+                tk.Label(item_frame, text="[圖片損毀]", width=15, height=4, bg="gray", fg="white").pack(side=tk.LEFT, padx=5)
+                
+            info_frame = tk.Frame(item_frame, bg=item_frame["bg"])
+            info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10)
+            
+            tk.Label(info_frame, text=fname, font=("Arial", 11, "bold"), bg=item_frame["bg"]).pack(anchor="w")
+            tk.Label(info_frame, text=f"上傳: {utime[:16].replace('T', ' ')}", font=("Arial", 9), fg="gray", bg=item_frame["bg"]).pack(anchor="w")
+            if is_active:
+                tk.Label(info_frame, text="✅ 目前使用中", font=("Arial", 10), fg="green", bg=item_frame["bg"]).pack(anchor="w", pady=2)
+                
+            btn_frame = tk.Frame(item_frame, bg=item_frame["bg"])
+            btn_frame.pack(side=tk.RIGHT, padx=5)
+            
+            if not is_active:
+                tk.Button(btn_frame, text="設為背景", command=lambda i=bg_id: set_active(i)).pack(pady=2, fill=tk.X)
+            tk.Button(btn_frame, text="刪除", command=lambda i=bg_id, p=path, a=is_active: delete_bg(i, p, a), fg="red").pack(pady=2, fill=tk.X)
+
+    refresh_list()
+# --- 背景個人化功能結束 ---
+
 # GUI 啟動
 root = tk.Tk()
 root.title("遺忘曲線提醒工具")
@@ -953,9 +1223,12 @@ screen_width = root.winfo_screenwidth()
 root.geometry(f"{min(1200, max(900, screen_width - 80))}x650")
 root.minsize(950, 560)
 
+
+
 selected_task_id = tk.IntVar(value=-1)
 paned = ttk.Panedwindow(root, orient="horizontal")
-paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+# 增加 padding 讓背景圖片像畫框一樣露出來，否則會被完全遮擋
+paned.pack(fill=tk.BOTH, expand=True, padx=60, pady=60)
 
 left_frame = tk.Frame(paned)
 right_frame = tk.Frame(paned)
@@ -1021,6 +1294,7 @@ tk.Button(new_task_frame, text="新增任務並設定提醒", command=add_task_a
 tk.Button(buttons_panel, text="匯入 CSV", command=on_click_import_csv, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 tk.Button(buttons_panel, text="匯出 CSV", command=on_click_export_csv, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 tk.Button(buttons_panel, text="刪除所選任務", command=delete_tasks, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
+tk.Button(buttons_panel, text="個人化", command=open_personalization_popup, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 tk.Button(buttons_panel, text="一鍵完成任務", command=complete_task_immediately, font=('Arial', 11), height=2).pack(pady=4, anchor='n')
 
 tk.Label(right_frame, text="任務月曆", font=("Arial", 26)).pack()
@@ -1044,5 +1318,7 @@ calendar.bind("<<CalendarSelected>>", on_calendar_select)
 init_db()
 load_tasks()
 tag_calendar_by_category()
+ensure_bg_dir()
+load_background(is_startup=True)
 root.after(1000, reminder_checker)
 root.mainloop()

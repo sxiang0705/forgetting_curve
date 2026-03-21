@@ -1133,6 +1133,13 @@ def open_personalization_popup():
     canvas.bind('<Configure>', lambda e: canvas.itemconfig(canvas_window, width=e.width))
     canvas.configure(yscrollcommand=scrollbar.set)
     
+    def _on_mousewheel(event):
+        try:
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        except:
+            pass
+    pop.bind("<MouseWheel>", _on_mousewheel)
+    
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
     
@@ -1145,9 +1152,9 @@ def open_personalization_popup():
         c.execute("UPDATE backgrounds SET is_active = 1 WHERE id = ?", (bg_id,))
         conn.commit()
         conn.close()
-        # 不要在設定背景時觸發隨機，傳入 is_startup=False
         load_background(is_startup=False)
         refresh_list()
+        messagebox.showinfo("套用成功", "背景已成功更換！", parent=pop)
         
     def delete_bg(bg_id, bg_path, is_active):
         if messagebox.askyesno("確認刪除", "確定要刪除這張背景圖片嗎？", parent=pop):
@@ -1188,23 +1195,28 @@ def open_personalization_popup():
             item_frame = tk.Frame(scrollable_frame, bd=1, relief="solid", padx=5, pady=5, bg="#e0f7fa" if is_active else "white")
             item_frame.pack(fill=tk.X, pady=4, padx=4)
             
+            img_lbl = tk.Label(item_frame, bg="gray")
             try:
+                from PIL import Image, ImageTk
                 img = Image.open(path)
-                # handle proper rotation if exist in exif
                 img.thumbnail((120, 80))
                 photo = ImageTk.PhotoImage(img)
                 pop.thumbnails.append(photo)
-                tk.Label(item_frame, image=photo, bg="gray").pack(side=tk.LEFT, padx=5)
+                img_lbl.config(image=photo)
             except:
-                tk.Label(item_frame, text="[圖片損毀]", width=15, height=4, bg="gray", fg="white").pack(side=tk.LEFT, padx=5)
+                img_lbl.config(text="[圖片損毀]", width=15, height=4, fg="white")
+            img_lbl.pack(side=tk.LEFT, padx=5)
                 
             info_frame = tk.Frame(item_frame, bg=item_frame["bg"])
             info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10)
             
-            tk.Label(info_frame, text=fname, font=("Arial", 11, "bold"), bg=item_frame["bg"]).pack(anchor="w")
-            tk.Label(info_frame, text=f"上傳: {utime[:16].replace('T', ' ')}", font=("Arial", 9), fg="gray", bg=item_frame["bg"]).pack(anchor="w")
+            t_lbl = tk.Label(info_frame, text=fname, font=("Arial", 11, "bold"), bg=item_frame["bg"])
+            t_lbl.pack(anchor="w")
+            d_lbl = tk.Label(info_frame, text=f"上傳: {utime[:16].replace('T', ' ')}", font=("Arial", 9), fg="gray", bg=item_frame["bg"])
+            d_lbl.pack(anchor="w")
             if is_active:
-                tk.Label(info_frame, text="✅ 目前使用中", font=("Arial", 10), fg="green", bg=item_frame["bg"]).pack(anchor="w", pady=2)
+                a_lbl = tk.Label(info_frame, text="✅ 目前使用中", font=("Arial", 10), fg="green", bg=item_frame["bg"])
+                a_lbl.pack(anchor="w", pady=2)
                 
             btn_frame = tk.Frame(item_frame, bg=item_frame["bg"])
             btn_frame.pack(side=tk.RIGHT, padx=5)
@@ -1212,6 +1224,12 @@ def open_personalization_popup():
             if not is_active:
                 tk.Button(btn_frame, text="設為背景", command=lambda i=bg_id: set_active(i)).pack(pady=2, fill=tk.X)
             tk.Button(btn_frame, text="刪除", command=lambda i=bg_id, p=path, a=is_active: delete_bg(i, p, a), fg="red").pack(pady=2, fill=tk.X)
+
+            # 讓整個方塊都可以點擊選取
+            if not is_active:
+                for w in [item_frame, img_lbl, info_frame, t_lbl, d_lbl]:
+                    w.bind("<Button-1>", lambda e, i=bg_id: set_active(i))
+                    w.config(cursor="hand2")
 
     refresh_list()
 # --- 背景個人化功能結束 ---

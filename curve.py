@@ -156,6 +156,7 @@ BG_DIR = "backgrounds"
 bg_image_keep_ref = None
 popup = None
 db_importing = False
+notifications_paused = False
 
 DEFAULT_CATEGORIES = ["英文單字", "程式技能", "工作備忘", "日常學習"]
 DEFAULT_DIFFICULTIES = ["初級", "中級", "高級"]
@@ -934,6 +935,11 @@ def reminder_checker():
         root.after(1000, reminder_checker)
         return
 
+    global notifications_paused
+    if notifications_paused:
+        root.after(30000, reminder_checker)
+        return
+
     try:
         now = datetime.datetime.now().isoformat()
         conn = sqlite3.connect(DB_PATH)
@@ -956,7 +962,17 @@ def reminder_checker():
     root.after(30000, reminder_checker)
 
 
+active_popups = set()
+
 def show_reminder(title, reminder_id):
+    if reminder_id in active_popups:
+        return
+    active_popups.add(reminder_id)
+
+    def on_close():
+        active_popups.discard(reminder_id)
+        popup.destroy()
+
     def mark_as_done():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -981,10 +997,18 @@ def show_reminder(title, reminder_id):
         conn.close()
         tag_calendar_by_category()
         load_tasks()
-        popup.destroy()
+        on_close()
 
     def acknowledge():
-        popup.destroy()
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        new_time = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat()
+        cursor.execute("UPDATE reminders SET remind_time = ? WHERE id = ?", (new_time, reminder_id))
+        conn.commit()
+        conn.close()
+        tag_calendar_by_category()
+        load_tasks()
+        on_close()
 
     # 額外查詢備註
     conn = sqlite3.connect(DB_PATH)
@@ -1003,6 +1027,7 @@ def show_reminder(title, reminder_id):
     popup.title("🔔 提醒")
     popup.geometry("380x200+300+300")
     popup.attributes("-topmost", True)
+    popup.protocol("WM_DELETE_WINDOW", on_close)
     
     tk.Label(popup, text=f"📌 現在是時候複習：{title}", font=("Arial", 12)).pack(pady=10)
 
@@ -1013,7 +1038,7 @@ def show_reminder(title, reminder_id):
     btn_frame.pack(pady=10)
 
     tk.Button(btn_frame, text="我已複習", font=('Arial', 11), command=mark_as_done, bg="#4CAF50", fg="white", width=10).pack(side="left", padx=10)
-    tk.Button(btn_frame, text="收到", font=('Arial', 11), command=acknowledge, bg="#f0ad4e", fg="white", width=10).pack(side="right", padx=10)
+    tk.Button(btn_frame, text="1小時後提醒", font=('Arial', 11), command=acknowledge, bg="#f0ad4e", fg="white", width=12).pack(side="right", padx=10)
 
 
 def on_calendar_select(event):
@@ -1454,7 +1479,36 @@ tk.Button(buttons_panel, text="🖼 個人化背景", command=open_personalizati
 tk.Button(buttons_panel, text="📥 匯入 CSV", command=on_click_import_csv, **btn_style).pack(pady=pad_y, padx=15, fill=tk.X)
 tk.Button(buttons_panel, text="📤 匯出 CSV", command=on_click_export_csv, **btn_style).pack(pady=pad_y, padx=15, fill=tk.X)
 
-tk.Label(right_frame, text="📅 任務月曆", font=("微軟正黑體", 22, "bold"), fg="#333333").pack(pady=(0, 10))
+def toggle_notifications():
+    global notifications_paused
+    notifications_paused = not notifications_paused
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('notifications_paused', ?)", ('1' if notifications_paused else '0',))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    if notifications_paused:
+        btn_notify_toggle.config(text="🔕 恢復通知", bg="#ffeebb", fg="#886600")
+        dnd_status_label.config(text="(🔕 勿擾模式中)")
+        root.title("遺忘曲線提醒工具 [🔕 勿擾模式]")
+    else:
+        btn_notify_toggle.config(text="🔔 暫停通知", bg="#e6f0ff", fg="#0044cc")
+        dnd_status_label.config(text="")
+        root.title("遺忘曲線提醒工具")
+
+btn_notify_toggle = tk.Button(buttons_panel, text="🔔 暫停通知", command=toggle_notifications, font=("微軟正黑體", 11, "bold"), height=2, width=18, bg="#e6f0ff", fg="#0044cc", relief="groove", bd=2, activebackground="#cce0ff", cursor="hand2")
+btn_notify_toggle.pack(pady=pad_y, padx=15, fill=tk.X)
+
+calendar_title_frame = tk.Frame(right_frame)
+calendar_title_frame.pack(pady=(0, 10))
+tk.Label(calendar_title_frame, text="📅 任務月曆", font=("微軟正黑體", 22, "bold"), fg="#333333").pack(side=tk.LEFT)
+dnd_status_label = tk.Label(calendar_title_frame, text="", font=("微軟正黑體", 22, "bold"), fg="#d9534f")
+dnd_status_label.pack(side=tk.LEFT, padx=(10, 0))
 calendar = Calendar(
     right_frame,
     selectmode='day',
@@ -1485,6 +1539,21 @@ calendar.bind("<<CalendarSelected>>", on_calendar_select)
 
 
 init_db()
+
+try:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key='notifications_paused'")
+    row = c.fetchone()
+    conn.close()
+    if row and row[0] == '1':
+        notifications_paused = True
+        btn_notify_toggle.config(text="🔕 恢復通知", bg="#ffeebb", fg="#886600")
+        dnd_status_label.config(text="(🔕 勿擾模式中)")
+        root.title("遺忘曲線提醒工具 [🔕 勿擾模式]")
+except Exception:
+    pass
+
 load_tasks()
 tag_calendar_by_category()
 ensure_bg_dir()

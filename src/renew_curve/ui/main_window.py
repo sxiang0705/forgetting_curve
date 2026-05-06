@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
 
 from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.db import ReminderRepository, connect, init_db
-from renew_curve.models import Task
+from renew_curve.models import ReminderDraft, Task, TaskDraft
+from renew_curve.scheduler import generated_review_times
 from renew_curve.ui.dialogs import ImportExportDialog, SettingsDialog, TaskDialog
 from renew_curve.ui.theme import build_stylesheet
 
@@ -242,7 +243,39 @@ class MainWindow(QMainWindow):
 
     def open_task_dialog(self) -> None:
         dialog = TaskDialog(self)
-        dialog.exec()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        values = dialog.values()
+        title = str(values["title"]).strip()
+        if not title:
+            QMessageBox.warning(self, "Task required", "Please enter a task title.")
+            return
+
+        start_time = values["start_time"]
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            with conn:
+                task_id = repository.create_task(
+                    TaskDraft(
+                        title=title,
+                        category=str(values["category"]),
+                        difficulty=str(values["difficulty"]),
+                        notes=str(values["notes"]),
+                        reminder_method=str(values["reminder_method"]),
+                        start_time=start_time,
+                    )
+                )
+                if values["reminder_method"] == "遺忘曲線":
+                    for remind_time in generated_review_times(
+                        start_time, int(values["review_count"])
+                    ):
+                        repository.create_reminder(
+                            ReminderDraft(task_id=task_id, remind_time=remind_time)
+                        )
+
+        self.refresh_tasks()
 
     def open_import_export_dialog(self) -> None:
         dialog = ImportExportDialog(self)

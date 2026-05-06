@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 
+from PySide6.QtCore import QDateTime
 from PySide6.QtWidgets import (
     QComboBox,
+    QDateTimeEdit,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -12,6 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QTextEdit,
     QVBoxLayout,
 )
@@ -83,6 +87,12 @@ class TaskDialog(QDialog):
         self.notes_edit = QTextEdit()
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["遺忘曲線", "手動輸入"])
+        self.start_edit = QDateTimeEdit(QDateTime.currentDateTime())
+        self.start_edit.setCalendarPopup(True)
+        self.start_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.review_count_spin = QSpinBox()
+        self.review_count_spin.setRange(3, 10)
+        self.review_count_spin.setValue(5)
 
         form = QFormLayout()
         form.addRow("Title", self.title_edit)
@@ -90,6 +100,8 @@ class TaskDialog(QDialog):
         form.addRow("Difficulty", self.difficulty_combo)
         form.addRow("Notes", self.notes_edit)
         form.addRow("Mode", self.mode_combo)
+        form.addRow("Start time", self.start_edit)
+        form.addRow("Review count", self.review_count_spin)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -101,6 +113,20 @@ class TaskDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(buttons)
+
+    def values(self) -> dict[str, object]:
+        start_time = self.start_edit.dateTime().toPython()
+        if isinstance(start_time, dt.datetime) and start_time.tzinfo is not None:
+            start_time = start_time.replace(tzinfo=None)
+        return {
+            "title": self.title_edit.text().strip(),
+            "category": self.category_edit.text().strip(),
+            "difficulty": self.difficulty_combo.currentText(),
+            "notes": self.notes_edit.toPlainText().strip(),
+            "reminder_method": self.mode_combo.currentText(),
+            "start_time": start_time,
+            "review_count": self.review_count_spin.value(),
+        }
 
 
 class ImportExportDialog(QDialog):

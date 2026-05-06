@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QTableWidget,
@@ -22,8 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.db import ReminderRepository, connect, init_db
 from renew_curve.models import Task
+from renew_curve.ui.dialogs import ImportExportDialog, TaskDialog
 from renew_curve.ui.theme import build_stylesheet
 
 
@@ -105,10 +108,19 @@ class MainWindow(QMainWindow):
         layout.addWidget(logo, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addSpacing(12)
 
-        for label in ("Tasks", "Calendar", "Import/Export", "Settings"):
+        for label in ("Tasks", "Calendar"):
             button = QPushButton(label)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             layout.addWidget(button)
+
+        self.import_export_button = QPushButton("Import/Export")
+        self.import_export_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_export_button.clicked.connect(self.open_import_export_dialog)
+        layout.addWidget(self.import_export_button)
+
+        settings_button = QPushButton("Settings")
+        settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(settings_button)
 
         layout.addStretch(1)
 
@@ -135,10 +147,11 @@ class MainWindow(QMainWindow):
         self.search_input.setFixedWidth(260)
         header.addWidget(self.search_input)
 
-        new_task_button = QPushButton("New task")
-        new_task_button.setObjectName("PrimaryButton")
-        new_task_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        header.addWidget(new_task_button)
+        self.new_task_button = QPushButton("New task")
+        self.new_task_button.setObjectName("PrimaryButton")
+        self.new_task_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_task_button.clicked.connect(self.open_task_dialog)
+        header.addWidget(self.new_task_button)
         layout.addLayout(header)
 
         stats = QHBoxLayout()
@@ -222,3 +235,49 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _status_label(task: Task) -> str:
         return "Done" if task.is_completed else "Active"
+
+    def open_task_dialog(self) -> None:
+        dialog = TaskDialog(self)
+        dialog.exec()
+
+    def open_import_export_dialog(self) -> None:
+        dialog = ImportExportDialog(self)
+        dialog.import_replace_button.clicked.connect(
+            lambda: self._import_csv(dialog, "replace")
+        )
+        dialog.import_merge_button.clicked.connect(
+            lambda: self._import_csv(dialog, "merge")
+        )
+        dialog.export_button.clicked.connect(lambda: self._export_csv(dialog))
+        dialog.exec()
+
+    def _import_csv(self, dialog: ImportExportDialog, mode: str) -> None:
+        path = dialog.choose_csv_open()
+        if path is None:
+            return
+
+        try:
+            summary = import_legacy_csv(path, self.db_path, mode=mode)
+        except Exception as exc:
+            QMessageBox.critical(self, "Import failed", str(exc))
+            return
+
+        self.refresh_tasks()
+        QMessageBox.information(
+            self,
+            "Import complete",
+            f"Imported {summary.tasks} tasks and {summary.reminders} reminders.",
+        )
+
+    def _export_csv(self, dialog: ImportExportDialog) -> None:
+        path = dialog.choose_csv_save()
+        if path is None:
+            return
+
+        try:
+            export_legacy_csv(self.db_path, path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export failed", str(exc))
+            return
+
+        QMessageBox.information(self, "Export complete", f"Exported to {path}.")

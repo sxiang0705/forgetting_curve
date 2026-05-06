@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 class SettingsDialog(QDialog):
     def __init__(self, parent=None, current: dict[str, str] | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Settings")
+        self.setWindowTitle("個人化")
         current = current or {}
 
         self.theme_combo = QComboBox()
@@ -44,10 +44,10 @@ class SettingsDialog(QDialog):
         self._set_current(self.snooze_combo, current.get("default_snooze", "10m"))
 
         form = QFormLayout()
-        form.addRow("Theme", self.theme_combo)
-        form.addRow("Accent", self.accent_combo)
-        form.addRow("Density", self.density_combo)
-        form.addRow("Default snooze", self.snooze_combo)
+        form.addRow("主題", self.theme_combo)
+        form.addRow("重點色", self.accent_combo)
+        form.addRow("介面密度", self.density_combo)
+        form.addRow("預設稍後提醒", self.snooze_combo)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -78,7 +78,7 @@ class SettingsDialog(QDialog):
 class TaskDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("New task")
+        self.setWindowTitle("新增任務")
 
         self.title_edit = QLineEdit()
         self.category_edit = QLineEdit()
@@ -95,13 +95,13 @@ class TaskDialog(QDialog):
         self.review_count_spin.setValue(5)
 
         form = QFormLayout()
-        form.addRow("Title", self.title_edit)
-        form.addRow("Category", self.category_edit)
-        form.addRow("Difficulty", self.difficulty_combo)
-        form.addRow("Notes", self.notes_edit)
-        form.addRow("Mode", self.mode_combo)
-        form.addRow("Start time", self.start_edit)
-        form.addRow("Review count", self.review_count_spin)
+        form.addRow("任務名稱", self.title_edit)
+        form.addRow("分類", self.category_edit)
+        form.addRow("難度", self.difficulty_combo)
+        form.addRow("筆記", self.notes_edit)
+        form.addRow("提醒模式", self.mode_combo)
+        form.addRow("開始時間", self.start_edit)
+        form.addRow("複習次數", self.review_count_spin)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -132,16 +132,16 @@ class TaskDialog(QDialog):
 class ImportExportDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Import / Export")
+        self.setWindowTitle("匯入 / 匯出")
 
         description = QLabel(
-            "Legacy CSV files from the Tkinter version are supported."
+            "支援匯入舊版 Tkinter 匯出的 CSV 檔案。"
         )
         description.setWordWrap(True)
 
-        self.import_replace_button = QPushButton("Import replace")
-        self.import_merge_button = QPushButton("Import merge")
-        self.export_button = QPushButton("Export")
+        self.import_replace_button = QPushButton("取代匯入")
+        self.import_merge_button = QPushButton("合併匯入")
+        self.export_button = QPushButton("匯出")
 
         actions = QHBoxLayout()
         actions.addWidget(self.import_replace_button)
@@ -155,7 +155,7 @@ class ImportExportDialog(QDialog):
     def choose_csv_open(self) -> Path | None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Choose CSV to import",
+            "選擇要匯入的 CSV",
             "",
             "CSV files (*.csv);;All files (*.*)",
         )
@@ -164,7 +164,7 @@ class ImportExportDialog(QDialog):
     def choose_csv_save(self) -> Path | None:
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Choose CSV export path",
+            "選擇 CSV 匯出位置",
             "",
             "CSV files (*.csv);;All files (*.*)",
         )

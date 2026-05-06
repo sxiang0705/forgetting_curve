@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from contextlib import closing
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from PySide6.QtWidgets import (
 from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.db import ReminderRepository, connect, init_db
 from renew_curve.models import ReminderDraft, Task, TaskDraft
-from renew_curve.scheduler import generated_review_times
+from renew_curve.scheduler import generated_review_times, snooze_until
 from renew_curve.ui.dialogs import ImportExportDialog, SettingsDialog, TaskDialog
 from renew_curve.ui.theme import build_stylesheet
 
@@ -59,14 +60,30 @@ class MainWindow(QMainWindow):
         with closing(connect(self.db_path)) as conn:
             repository = ReminderRepository(conn)
             tasks = repository.list_tasks()
+            next_reminders = {
+                task.id: repository.next_pending_reminder(task.id) for task in tasks
+            }
 
         self.task_table.setRowCount(len(tasks))
+        self._row_task_ids: list[int] = []
+        self._row_next_reminder_ids: list[int | None] = []
+        self._row_next_reminder_times: list[dt.datetime | None] = []
 
         for row_index, task in enumerate(tasks):
+            next_reminder = next_reminders[task.id]
+            self._row_task_ids.append(task.id)
+            self._row_next_reminder_ids.append(
+                None if next_reminder is None else next_reminder.id
+            )
+            self._row_next_reminder_times.append(
+                None if next_reminder is None else next_reminder.remind_time
+            )
             values = [
                 task.title,
                 task.category,
-                "",
+                self._format_next_reminder(next_reminder.remind_time)
+                if next_reminder is not None
+                else "無",
                 f"{task.progress_percent:.0f}%",
                 self._status_label(task),
             ]
@@ -112,24 +129,24 @@ class MainWindow(QMainWindow):
         layout.addWidget(logo, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addSpacing(12)
 
-        for label in ("Tasks", "Calendar"):
+        for label in ("任務", "日曆"):
             button = QPushButton(label)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             layout.addWidget(button)
 
-        self.import_export_button = QPushButton("Import/Export")
+        self.import_export_button = QPushButton("匯入/匯出")
         self.import_export_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.import_export_button.clicked.connect(self.open_import_export_dialog)
         layout.addWidget(self.import_export_button)
 
-        self.settings_button = QPushButton("Settings")
+        self.settings_button = QPushButton("個人化")
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.clicked.connect(self.open_settings_dialog)
         layout.addWidget(self.settings_button)
 
         layout.addStretch(1)
 
-        dnd_button = QPushButton("DND Off")
+        dnd_button = QPushButton("勿擾關閉")
         dnd_button.setCursor(Qt.CursorShape.PointingHandCursor)
         layout.addWidget(dnd_button)
 
@@ -142,21 +159,31 @@ class MainWindow(QMainWindow):
         layout.setSpacing(18)
 
         header = QHBoxLayout()
-        title = QLabel("Review planner")
+        title = QLabel("複習計畫")
         title.setStyleSheet("font-size: 28px; font-weight: 700;")
         header.addWidget(title)
         header.addStretch(1)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search tasks")
+        self.search_input.setPlaceholderText("搜尋任務")
         self.search_input.setFixedWidth(260)
         header.addWidget(self.search_input)
 
-        self.new_task_button = QPushButton("New task")
+        self.new_task_button = QPushButton("新增任務")
         self.new_task_button.setObjectName("PrimaryButton")
         self.new_task_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.new_task_button.clicked.connect(self.open_task_dialog)
         header.addWidget(self.new_task_button)
+
+        self.complete_next_button = QPushButton("完成下一次")
+        self.complete_next_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.complete_next_button.clicked.connect(self.complete_selected_next_reminder)
+        header.addWidget(self.complete_next_button)
+
+        self.snooze_next_button = QPushButton("稍後提醒")
+        self.snooze_next_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.snooze_next_button.clicked.connect(self.snooze_selected_next_reminder)
+        header.addWidget(self.snooze_next_button)
         layout.addLayout(header)
 
         stats = QHBoxLayout()
@@ -164,14 +191,14 @@ class MainWindow(QMainWindow):
         self.total_tasks_value = QLabel("0")
         self.active_tasks_value = QLabel("0")
         self.completed_tasks_value = QLabel("0")
-        stats.addWidget(self._build_stat_card("Total", self.total_tasks_value))
-        stats.addWidget(self._build_stat_card("Active", self.active_tasks_value))
-        stats.addWidget(self._build_stat_card("Completed", self.completed_tasks_value))
+        stats.addWidget(self._build_stat_card("總數", self.total_tasks_value))
+        stats.addWidget(self._build_stat_card("進行中", self.active_tasks_value))
+        stats.addWidget(self._build_stat_card("已完成", self.completed_tasks_value))
         layout.addLayout(stats)
 
         self.task_table = QTableWidget(0, 5)
         self.task_table.setHorizontalHeaderLabels(
-            ["Task", "Category", "Next", "Progress", "Status"]
+            ["任務", "分類", "下一次", "進度", "狀態"]
         )
         self.task_table.setAlternatingRowColors(True)
         self.task_table.setSelectionBehavior(
@@ -224,7 +251,7 @@ class MainWindow(QMainWindow):
         day_frame.setObjectName("Panel")
         day_layout = QVBoxLayout(day_frame)
         day_layout.setContentsMargins(14, 12, 14, 12)
-        day_title = QLabel("Selected day")
+        day_title = QLabel("選取日期")
         day_title.setStyleSheet("font-size: 18px; font-weight: 700;")
         self.selected_day_label = QLabel(
             self.calendar.selectedDate().toString("yyyy-MM-dd")
@@ -239,7 +266,11 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _status_label(task: Task) -> str:
-        return "Done" if task.is_completed else "Active"
+        return "已完成" if task.is_completed else "進行中"
+
+    @staticmethod
+    def _format_next_reminder(remind_time: dt.datetime) -> str:
+        return remind_time.strftime("%Y-%m-%d %H:%M")
 
     def open_task_dialog(self) -> None:
         dialog = TaskDialog(self)
@@ -276,6 +307,59 @@ class MainWindow(QMainWindow):
                         )
 
         self.refresh_tasks()
+
+    def complete_selected_next_reminder(self) -> None:
+        reminder_id = self._selected_next_reminder_id()
+        if reminder_id is None:
+            QMessageBox.information(self, "No reminder", "No pending reminder selected.")
+            return
+
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            with conn:
+                repository.mark_reminder_done(reminder_id)
+
+        self.refresh_tasks()
+
+    def snooze_selected_next_reminder(self, now: dt.datetime | None = None) -> None:
+        row = self._selected_row()
+        if row is None:
+            QMessageBox.information(self, "No task", "Please select a task first.")
+            return
+
+        reminder_id = self._row_next_reminder_ids[row]
+        current_time = self._row_next_reminder_times[row]
+        if reminder_id is None or current_time is None:
+            QMessageBox.information(self, "No reminder", "No pending reminder selected.")
+            return
+
+        settings = self._load_personalization_settings()
+        choice = settings.get("default_snooze", "10m")
+        base_time = max(now or dt.datetime.now(), current_time)
+        new_time = snooze_until(base_time, choice)
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            with conn:
+                repository.snooze_reminder(reminder_id, new_time)
+
+        self.refresh_tasks()
+
+    def _selected_next_reminder_id(self) -> int | None:
+        row = self._selected_row()
+        if row is None:
+            return None
+        return self._row_next_reminder_ids[row]
+
+    def _selected_row(self) -> int | None:
+        rows = self.task_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        row = rows[0].row()
+        if row < 0 or row >= len(self._row_next_reminder_ids):
+            return None
+        return row
 
     def open_import_export_dialog(self) -> None:
         dialog = ImportExportDialog(self)

@@ -193,6 +193,19 @@ class ReminderRepository:
         )
         return [_reminder_from_row(row) for row in rows]
 
+    def next_pending_reminder(self, task_id: int) -> Reminder | None:
+        row = self._conn.execute(
+            """
+            SELECT id, task_id, remind_time, reminded
+            FROM reminders
+            WHERE task_id = ? AND reminded = 0
+            ORDER BY remind_time, id
+            LIMIT 1
+            """,
+            (task_id,),
+        ).fetchone()
+        return None if row is None else _reminder_from_row(row)
+
     def mark_reminder_done(self, reminder_id: int) -> None:
         row = self._conn.execute(
             "SELECT task_id FROM reminders WHERE id = ?", (reminder_id,)
@@ -202,6 +215,19 @@ class ReminderRepository:
 
         self._conn.execute(
             "UPDATE reminders SET reminded = 1 WHERE id = ?", (reminder_id,)
+        )
+        self.recalculate_task_progress(int(row["task_id"]))
+
+    def snooze_reminder(self, reminder_id: int, remind_time: dt.datetime) -> None:
+        row = self._conn.execute(
+            "SELECT task_id FROM reminders WHERE id = ?", (reminder_id,)
+        ).fetchone()
+        if row is None:
+            return
+
+        self._conn.execute(
+            "UPDATE reminders SET remind_time = ?, reminded = 0 WHERE id = ?",
+            (_dump_datetime(remind_time), reminder_id),
         )
         self.recalculate_task_progress(int(row["task_id"]))
 

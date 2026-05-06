@@ -79,3 +79,131 @@ def test_new_task_dialog_acceptance_creates_curve_task(monkeypatch, tmp_path):
 
     window.close()
     app.processEvents()
+
+
+def test_main_window_shows_and_completes_next_reminder(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    import datetime as dt
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.db import ReminderRepository, connect, init_db
+    from renew_curve.models import ReminderDraft, TaskDraft
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    db_path = tmp_path / "gui.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        with conn:
+            task_id = repo.create_task(
+                TaskDraft(
+                    title="下一次提醒測試",
+                    category="Python",
+                    difficulty="中級",
+                    notes="",
+                    reminder_method="遺忘曲線",
+                    start_time=dt.datetime(2026, 5, 6, 9, 0),
+                )
+            )
+            reminder_id = repo.create_reminder(
+                ReminderDraft(
+                    task_id=task_id,
+                    remind_time=dt.datetime(2026, 5, 7, 9, 0),
+                )
+            )
+
+    window = MainWindow(db_path)
+
+    assert window.task_table.item(0, 2).text() == "2026-05-07 09:00"
+
+    window.task_table.selectRow(0)
+    window.complete_next_button.click()
+
+    with connect(db_path) as conn:
+        repo = ReminderRepository(conn)
+        task = repo.get_task(task_id)
+        reminder = repo.list_reminders(task_id)[0]
+
+    assert reminder.id == reminder_id
+    assert reminder.reminded is True
+    assert task is not None
+    assert task.is_completed is True
+    assert window.task_table.item(0, 3).text() == "100%"
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_snoozes_next_reminder_with_saved_preference(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    import datetime as dt
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.db import ReminderRepository, connect, init_db
+    from renew_curve.models import ReminderDraft, TaskDraft
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    db_path = tmp_path / "gui.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        with conn:
+            repo.set_setting("default_snooze", "1h")
+            task_id = repo.create_task(
+                TaskDraft(
+                    title="稍後提醒測試",
+                    category="Python",
+                    difficulty="中級",
+                    notes="",
+                    reminder_method="遺忘曲線",
+                    start_time=dt.datetime(2026, 5, 6, 9, 0),
+                )
+            )
+            repo.create_reminder(
+                ReminderDraft(
+                    task_id=task_id,
+                    remind_time=dt.datetime(2026, 5, 7, 9, 0),
+                )
+            )
+
+    window = MainWindow(db_path)
+    window.task_table.selectRow(0)
+    window.snooze_selected_next_reminder(now=dt.datetime(2026, 5, 7, 9, 30))
+
+    with connect(db_path) as conn:
+        repo = ReminderRepository(conn)
+        reminder = repo.list_reminders(task_id)[0]
+
+    assert reminder.remind_time == dt.datetime(2026, 5, 7, 10, 30)
+    assert window.task_table.item(0, 2).text() == "2026-05-07 10:30"
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_uses_traditional_chinese_primary_labels(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path / "gui.db")
+
+    assert window.new_task_button.text() == "新增任務"
+    assert window.import_export_button.text() == "匯入/匯出"
+    assert window.settings_button.text() == "個人化"
+    assert window.task_table.horizontalHeaderItem(0).text() == "任務"
+    assert window.task_table.horizontalHeaderItem(2).text() == "下一次"
+
+    window.close()
+    app.processEvents()

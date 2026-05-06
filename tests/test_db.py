@@ -124,3 +124,51 @@ def test_repository_operations_roll_back_with_outer_transaction(tmp_path):
 
     assert task_count == 0
     assert reminder_count == 0
+
+
+def test_repository_finds_and_snoozes_next_pending_reminder(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        task_id = repo.create_task(
+            TaskDraft(
+                title="資料庫練習",
+                category="Python",
+                difficulty="中級",
+                notes="indexes",
+                reminder_method="遺忘曲線",
+                start_time=dt.datetime(2026, 5, 6, 9, 0),
+            )
+        )
+        done_id = repo.create_reminder(
+            ReminderDraft(
+                task_id=task_id,
+                remind_time=dt.datetime(2026, 5, 7, 9, 0),
+                reminded=True,
+            )
+        )
+        next_id = repo.create_reminder(
+            ReminderDraft(
+                task_id=task_id,
+                remind_time=dt.datetime(2026, 5, 9, 9, 0),
+            )
+        )
+        repo.create_reminder(
+            ReminderDraft(
+                task_id=task_id,
+                remind_time=dt.datetime(2026, 5, 13, 9, 0),
+            )
+        )
+
+        next_reminder = repo.next_pending_reminder(task_id)
+        assert next_reminder is not None
+        assert next_reminder.id == next_id
+
+        repo.snooze_reminder(next_id, dt.datetime(2026, 5, 10, 10, 30))
+        snoozed = repo.next_pending_reminder(task_id)
+
+    assert done_id != next_id
+    assert snoozed is not None
+    assert snoozed.id == next_id
+    assert snoozed.remind_time == dt.datetime(2026, 5, 10, 10, 30)

@@ -188,6 +188,9 @@ def _write_rows(db_path: Path, rows: _LegacyRows, *, store_legacy_ids: bool) -> 
                     ),
                     legacy_id=str(reminder.legacy_id) if store_legacy_ids else None,
                 )
+
+            for task_id in id_map.values():
+                repo.recalculate_task_progress(task_id)
     finally:
         conn.close()
 
@@ -242,27 +245,13 @@ def _parse_task(row: dict[str, str], line_number: int) -> _LegacyTask:
     )
 
 
-def _parse_reminder(row: dict[str, str | None], line_number: int) -> _LegacyReminder:
-    row = _normalize_reminder_row(row)
+def _parse_reminder(row: dict[str, str], line_number: int) -> _LegacyReminder:
     return _LegacyReminder(
         legacy_id=_parse_int(row, "id", line_number),
         legacy_task_id=_parse_int(row, "task_id", line_number),
         remind_time=_parse_datetime(row, "remind_time", line_number),
         reminded=_parse_bool(row, "reminded", line_number),
     )
-
-
-def _normalize_reminder_row(row: dict[str, str | None]) -> dict[str, str]:
-    normalized = {key: value or "" for key, value in row.items()}
-    if (
-        normalized["reminded"] == ""
-        and normalized["remind_time"] in {"0", "1"}
-        and normalized["progress_percent"] != ""
-    ):
-        normalized["reminded"] = normalized["remind_time"]
-        normalized["remind_time"] = normalized["progress_percent"]
-        normalized["progress_percent"] = ""
-    return normalized
 
 
 def _required_text(row: dict[str, str], column: str, line_number: int) -> str:

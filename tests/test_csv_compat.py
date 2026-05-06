@@ -94,3 +94,82 @@ def test_export_round_trip_preserves_legacy_columns(tmp_path):
             reminders.extend(repo.list_reminders(task.id))
         assert len(tasks) == 2
         assert len(reminders) == 3
+
+
+def test_import_recalculates_completion_for_task_without_reminders(tmp_path):
+    db_path = tmp_path / "v8.db"
+    csv_path = tmp_path / "completed_without_reminders.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                ",".join(
+                    [
+                        "record_type",
+                        "id",
+                        "task_id",
+                        "title",
+                        "category",
+                        "difficulty",
+                        "notes",
+                        "reminder_method",
+                        "start_time",
+                        "is_completed",
+                        "progress_percent",
+                        "remind_time",
+                        "reminded",
+                    ]
+                ),
+                (
+                    "task,1,,Orphan task,General,Easy,,Manual,"
+                    "2026-05-01T09:00:00,1,100.0,,"
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    import_legacy_csv(csv_path, db_path, mode="replace")
+
+    with connect(db_path) as conn:
+        repo = ReminderRepository(conn)
+        task = repo.list_tasks()[0]
+
+    assert task.progress_percent == 0.0
+    assert task.is_completed is False
+
+
+def test_import_rejects_malformed_reminder_datetime(tmp_path):
+    db_path = tmp_path / "v8.db"
+    csv_path = tmp_path / "bad_datetime.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                ",".join(
+                    [
+                        "record_type",
+                        "id",
+                        "task_id",
+                        "title",
+                        "category",
+                        "difficulty",
+                        "notes",
+                        "reminder_method",
+                        "start_time",
+                        "is_completed",
+                        "progress_percent",
+                        "remind_time",
+                        "reminded",
+                    ]
+                ),
+                (
+                    "task,1,,Task,General,Easy,,Manual,"
+                    "2026-05-01T09:00:00,0,0.0,,"
+                ),
+                "reminder,10,1,,,,,,,,,1,0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid datetime"):
+        import_legacy_csv(csv_path, db_path, mode="replace")

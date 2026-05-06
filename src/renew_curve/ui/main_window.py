@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCalendarWidget,
@@ -32,6 +33,7 @@ class MainWindow(QMainWindow):
         self.conn = connect(self.db_path)
         init_db(self.conn)
         self.repository = ReminderRepository(self.conn)
+        self._database_closed = False
 
         self.setWindowTitle("Renew Curve v8")
         self.resize(1180, 760)
@@ -39,6 +41,17 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self.refresh_tasks()
+
+    def close_database(self) -> None:
+        if self._database_closed:
+            return
+
+        self.conn.close()
+        self._database_closed = True
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.close_database()
+        super().closeEvent(event)
 
     def refresh_tasks(self) -> None:
         tasks = self.repository.list_tasks()

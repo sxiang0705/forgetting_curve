@@ -1,4 +1,5 @@
 import csv
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,23 @@ def test_import_failure_leaves_existing_database_unchanged(tmp_path):
     with connect(db_path) as conn:
         repo = ReminderRepository(conn)
         assert repo.list_tasks() == []
+
+
+def test_replace_import_preserves_personalization_settings(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with closing(connect(db_path)) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        with conn:
+            repo.set_setting("theme", "dark")
+            repo.set_setting("accent", "green")
+
+    import_legacy_csv(FIXTURE, db_path, mode="replace")
+
+    with connect(db_path) as conn:
+        repo = ReminderRepository(conn)
+        assert repo.get_setting("theme", "light") == "dark"
+        assert repo.get_setting("accent", "blue") == "green"
 
 
 def test_merge_import_remaps_ids(tmp_path):

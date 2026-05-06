@@ -265,8 +265,9 @@ class MainWindow(QMainWindow):
         with closing(connect(self.db_path)) as conn:
             init_db(conn)
             repository = ReminderRepository(conn)
-            for key, value in values.items():
-                repository.set_setting(key, value)
+            with conn:
+                for key, value in values.items():
+                    repository.set_setting(key, value)
 
         self.setStyleSheet(self._stylesheet_for_settings(values))
 

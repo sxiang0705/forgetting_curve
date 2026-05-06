@@ -145,8 +145,10 @@ def export_legacy_csv(
 def _replace_import(rows: _LegacyRows, db_path: Path) -> ImportSummary:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     temp_db = db_path.with_name(f".{db_path.name}.{uuid.uuid4().hex}.tmp")
+    settings = _read_existing_settings(db_path)
     try:
         _write_rows(temp_db, rows, store_legacy_ids=True)
+        _write_settings(temp_db, settings)
         os.replace(temp_db, db_path)
     finally:
         if temp_db.exists():
@@ -191,6 +193,34 @@ def _write_rows(db_path: Path, rows: _LegacyRows, *, store_legacy_ids: bool) -> 
 
             for task_id in id_map.values():
                 repo.recalculate_task_progress(task_id)
+    finally:
+        conn.close()
+
+
+def _read_existing_settings(db_path: Path) -> dict[str, str]:
+    if not db_path.exists():
+        return {}
+
+    conn = connect(db_path)
+    try:
+        init_db(conn)
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+        return {str(row["key"]): str(row["value"]) for row in rows}
+    finally:
+        conn.close()
+
+
+def _write_settings(db_path: Path, settings: dict[str, str]) -> None:
+    if not settings:
+        return
+
+    conn = connect(db_path)
+    try:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        with conn:
+            for key, value in settings.items():
+                repo.set_setting(key, value)
     finally:
         conn.close()
 

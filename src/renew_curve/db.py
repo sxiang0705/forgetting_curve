@@ -210,7 +210,6 @@ class ReminderRepository:
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, value),
         )
-        self._conn.commit()
 
     def get_setting(self, key: str, default: str = "") -> str:
         row = self._conn.execute(

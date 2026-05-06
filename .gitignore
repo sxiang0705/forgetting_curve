@@ -10,6 +10,7 @@ reminder.db
 .superpowers/
 .worktrees
 .worktrees/
+*.egg-info/
 
 # 建置產物
 build/

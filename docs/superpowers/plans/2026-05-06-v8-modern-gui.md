@@ -1,48 +1,48 @@
-# v8 Modern GUI Implementation Plan
+# v8 現代化 GUI 實作計畫
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **給 agentic workers：** 必要子技能：使用 superpowers:subagent-driven-development（建議）或 superpowers:executing-plans，逐項任務實作此計畫。步驟使用 checkbox（`- [ ]`）語法追蹤。
 
-**Goal:** Build a PySide6 v8 desktop app with a modern left-sidebar GUI while safely importing CSV files exported by the legacy Tkinter version.
+**目標：** 建立具備現代化左側 sidebar GUI 的 PySide6 v8 桌面應用程式，同時安全匯入 legacy Tkinter 版本匯出的 CSV 檔案。
 
-**Architecture:** Keep `curve.py` as the legacy app and build a new `src/renew_curve` package. Implement data, scheduling, and CSV compatibility as GUI-independent modules with pytest coverage before wiring them into PySide6 widgets.
+**架構：** 保留 `curve.py` 作為 legacy app，並建立新的 `src/renew_curve` package。在串接 PySide6 widgets 之前，先將 data、scheduling 與 CSV compatibility 實作為 GUI-independent modules，並以 pytest 覆蓋。
 
-**Tech Stack:** Python 3.13, SQLite, pytest, PySide6, standard-library CSV/datetime/pathlib/dataclasses.
-
----
-
-## File Map
-
-- Modify: `.gitignore` to ignore local/generated files.
-- Create: `pyproject.toml` for dependencies and pytest configuration.
-- Create: `src/renew_curve/__init__.py` for package metadata.
-- Create: `src/renew_curve/models.py` for typed task/reminder/settings models.
-- Create: `src/renew_curve/scheduler.py` for curve days, progress, due checks, and snooze calculations.
-- Create: `src/renew_curve/db.py` for SQLite schema and repository operations.
-- Create: `src/renew_curve/csv_compat.py` for legacy CSV import/export safety.
-- Create: `src/renew_curve/app.py` for PySide6 startup.
-- Create: `src/renew_curve/ui/main_window.py` for the sidebar/dashboard/calendar shell.
-- Create: `src/renew_curve/ui/dialogs.py` for task and import dialogs.
-- Create: `src/renew_curve/ui/theme.py` for theme, accent color, density, and stylesheet generation.
-- Create: `tests/fixtures/legacy_export.csv` for a realistic legacy export.
-- Create: `tests/test_scheduler.py` for curve/progress/snooze tests.
-- Create: `tests/test_db.py` for database schema and repository tests.
-- Create: `tests/test_csv_compat.py` for legacy import, replace/merge, safety, and export round-trip tests.
-- Modify: `README.md` to document v8 usage and migration.
-- Create: `update_record/curve_tool_record_v8.md` for the v8 changelog.
+**技術堆疊：** Python 3.13、SQLite、pytest、PySide6、standard-library CSV/datetime/pathlib/dataclasses。
 
 ---
 
-### Task 1: Scaffold v8 Package And Test Runner
+## 檔案地圖
 
-**Files:**
-- Modify: `.gitignore`
-- Create: `pyproject.toml`
-- Create: `src/renew_curve/__init__.py`
-- Create: `tests/test_scheduler.py`
+- 修改：`.gitignore`，忽略 local/generated files。
+- 建立：`pyproject.toml`，用於 dependencies 與 pytest configuration。
+- 建立：`src/renew_curve/__init__.py`，用於 package metadata。
+- 建立：`src/renew_curve/models.py`，用於 typed task/reminder/settings models。
+- 建立：`src/renew_curve/scheduler.py`，用於 curve days、progress、due checks 與 snooze calculations。
+- 建立：`src/renew_curve/db.py`，用於 SQLite schema 與 repository operations。
+- 建立：`src/renew_curve/csv_compat.py`，用於 legacy CSV import/export safety。
+- 建立：`src/renew_curve/app.py`，用於 PySide6 startup。
+- 建立：`src/renew_curve/ui/main_window.py`，用於 sidebar/dashboard/calendar shell。
+- 建立：`src/renew_curve/ui/dialogs.py`，用於 task 與 import dialogs。
+- 建立：`src/renew_curve/ui/theme.py`，用於 theme、accent color、density 與 stylesheet generation。
+- 建立：`tests/fixtures/legacy_export.csv`，作為 realistic legacy export。
+- 建立：`tests/test_scheduler.py`，用於 curve/progress/snooze tests。
+- 建立：`tests/test_db.py`，用於 database schema 與 repository tests。
+- 建立：`tests/test_csv_compat.py`，用於 legacy import、replace/merge、safety 與 export round-trip tests。
+- 修改：`README.md`，記錄 v8 usage 與 migration。
+- 建立：`update_record/curve_tool_record_v8.md`，用於 v8 changelog。
 
-- [ ] **Step 1: Update ignore rules**
+---
 
-Add these entries to `.gitignore` without removing the existing lines:
+### 任務 1：建立 v8 Package 與 Test Runner
+
+**檔案：**
+- 修改：`.gitignore`
+- 建立：`pyproject.toml`
+- 建立：`src/renew_curve/__init__.py`
+- 建立：`tests/test_scheduler.py`
+
+- [ ] **步驟 1：更新 ignore rules**
+
+將這些項目新增到 `.gitignore`，不要移除既有行：
 
 ```gitignore
 .venv/
@@ -55,9 +55,9 @@ dist/
 *.sqlite3
 ```
 
-- [ ] **Step 2: Create project metadata**
+- [ ] **步驟 2：建立 project metadata**
 
-Create `pyproject.toml`:
+建立 `pyproject.toml`：
 
 ```toml
 [project]
@@ -79,9 +79,9 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 ```
 
-- [ ] **Step 3: Create package marker**
+- [ ] **步驟 3：建立 package marker**
 
-Create `src/renew_curve/__init__.py`:
+建立 `src/renew_curve/__init__.py`：
 
 ```python
 """v8 package for the Forgetting Curve Reminder Tool."""
@@ -89,9 +89,9 @@ Create `src/renew_curve/__init__.py`:
 __version__ = "8.0.0"
 ```
 
-- [ ] **Step 4: Write first failing scheduler import test**
+- [ ] **步驟 4：撰寫第一個會失敗的 scheduler import test**
 
-Create `tests/test_scheduler.py`:
+建立 `tests/test_scheduler.py`：
 
 ```python
 from renew_curve.scheduler import forgetting_curve_days
@@ -101,19 +101,19 @@ def test_forgetting_curve_days_for_five_reviews():
     assert forgetting_curve_days(5) == [1, 3, 7, 14, 30]
 ```
 
-- [ ] **Step 5: Run test and verify it fails**
+- [ ] **步驟 5：執行測試並確認會失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_scheduler.py -q
 ```
 
-Expected: FAIL because `renew_curve.scheduler` does not exist.
+預期：FAIL，因為 `renew_curve.scheduler` 尚不存在。
 
-- [ ] **Step 6: Commit scaffold**
+- [ ] **步驟 6：Commit scaffold**
 
-Run:
+執行：
 
 ```powershell
 git add .gitignore pyproject.toml src/renew_curve/__init__.py tests/test_scheduler.py
@@ -122,15 +122,15 @@ git commit -m "chore: scaffold v8 package"
 
 ---
 
-### Task 2: Implement Scheduler And Progress Logic
+### 任務 2：實作 Scheduler 與 Progress Logic
 
-**Files:**
-- Create: `src/renew_curve/scheduler.py`
-- Modify: `tests/test_scheduler.py`
+**檔案：**
+- 建立：`src/renew_curve/scheduler.py`
+- 修改：`tests/test_scheduler.py`
 
-- [ ] **Step 1: Expand failing scheduler tests**
+- [ ] **步驟 1：擴充會失敗的 scheduler tests**
 
-Replace `tests/test_scheduler.py` with:
+將 `tests/test_scheduler.py` 替換為：
 
 ```python
 import datetime as dt
@@ -179,19 +179,19 @@ def test_snooze_until_supports_expected_choices():
     assert snooze_until(now, "tomorrow") == dt.datetime(2026, 5, 7, 9, 0)
 ```
 
-- [ ] **Step 2: Run tests and verify expected failures**
+- [ ] **步驟 2：執行測試並確認預期失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_scheduler.py -q
 ```
 
-Expected: FAIL because the new functions are missing.
+預期：FAIL，因為新 functions 尚缺。
 
-- [ ] **Step 3: Implement scheduler module**
+- [ ] **步驟 3：實作 scheduler module**
 
-Create `src/renew_curve/scheduler.py`:
+建立 `src/renew_curve/scheduler.py`：
 
 ```python
 from __future__ import annotations
@@ -238,19 +238,19 @@ def snooze_until(now: dt.datetime, choice: str) -> dt.datetime:
     raise ValueError(f"unsupported snooze choice: {choice}")
 ```
 
-- [ ] **Step 4: Run scheduler tests**
+- [ ] **步驟 4：執行 scheduler tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_scheduler.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 5: Commit scheduler**
+- [ ] **步驟 5：Commit scheduler**
 
-Run:
+執行：
 
 ```powershell
 git add src/renew_curve/scheduler.py tests/test_scheduler.py
@@ -259,16 +259,16 @@ git commit -m "feat: add v8 scheduler logic"
 
 ---
 
-### Task 3: Add Data Models And SQLite Repository
+### 任務 3：新增 Data Models 與 SQLite Repository
 
-**Files:**
-- Create: `src/renew_curve/models.py`
-- Create: `src/renew_curve/db.py`
-- Create: `tests/test_db.py`
+**檔案：**
+- 建立：`src/renew_curve/models.py`
+- 建立：`src/renew_curve/db.py`
+- 建立：`tests/test_db.py`
 
-- [ ] **Step 1: Write failing database tests**
+- [ ] **步驟 1：撰寫會失敗的 database tests**
 
-Create `tests/test_db.py`:
+建立 `tests/test_db.py`：
 
 ```python
 import datetime as dt
@@ -318,19 +318,19 @@ def test_repository_creates_task_with_reminders_and_progress(tmp_path):
     assert reminders[0].reminded is True
 ```
 
-- [ ] **Step 2: Run database tests and verify they fail**
+- [ ] **步驟 2：執行 database tests 並確認會失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_db.py -q
 ```
 
-Expected: FAIL because `renew_curve.db` and `renew_curve.models` do not exist.
+預期：FAIL，因為 `renew_curve.db` 與 `renew_curve.models` 尚不存在。
 
-- [ ] **Step 3: Implement models**
+- [ ] **步驟 3：實作 models**
 
-Create `src/renew_curve/models.py`:
+建立 `src/renew_curve/models.py`：
 
 ```python
 from __future__ import annotations
@@ -384,9 +384,9 @@ class ImportSummary:
     mode: str
 ```
 
-- [ ] **Step 4: Implement database repository**
+- [ ] **步驟 4：實作 database repository**
 
-Create `src/renew_curve/db.py`:
+建立 `src/renew_curve/db.py`：
 
 ```python
 from __future__ import annotations
@@ -541,29 +541,29 @@ class ReminderRepository:
         self.conn.commit()
 ```
 
-- [ ] **Step 5: Run database tests**
+- [ ] **步驟 5：執行 database tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_db.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 6: Run scheduler and database tests together**
+- [ ] **步驟 6：一起執行 scheduler 與 database tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_scheduler.py tests/test_db.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 7: Commit models and database**
+- [ ] **步驟 7：Commit models 與 database**
 
-Run:
+執行：
 
 ```powershell
 git add src/renew_curve/models.py src/renew_curve/db.py tests/test_db.py
@@ -572,16 +572,16 @@ git commit -m "feat: add v8 sqlite repository"
 
 ---
 
-### Task 4: Implement Legacy CSV Compatibility
+### 任務 4：實作 Legacy CSV Compatibility
 
-**Files:**
-- Create: `tests/fixtures/legacy_export.csv`
-- Create: `tests/test_csv_compat.py`
-- Create: `src/renew_curve/csv_compat.py`
+**檔案：**
+- 建立：`tests/fixtures/legacy_export.csv`
+- 建立：`tests/test_csv_compat.py`
+- 建立：`src/renew_curve/csv_compat.py`
 
-- [ ] **Step 1: Add legacy CSV fixture**
+- [ ] **步驟 1：新增 legacy CSV fixture**
 
-Create `tests/fixtures/legacy_export.csv`:
+建立 `tests/fixtures/legacy_export.csv`：
 
 ```csv
 record_type,id,task_id,title,category,difficulty,notes,reminder_method,start_time,is_completed,progress_percent,remind_time,reminded
@@ -592,9 +592,9 @@ reminder,11,1,,,,,,,,2026-05-04T09:00:00,0
 reminder,12,2,,,,,,,,2026-05-03T10:00:00,1
 ```
 
-- [ ] **Step 2: Write failing CSV compatibility tests**
+- [ ] **步驟 2：撰寫會失敗的 CSV compatibility tests**
 
-Create `tests/test_csv_compat.py`:
+建立 `tests/test_csv_compat.py`：
 
 ```python
 import csv
@@ -680,19 +680,19 @@ def test_export_round_trip_preserves_legacy_columns(tmp_path):
         assert len(repo.list_reminders()) == 3
 ```
 
-- [ ] **Step 3: Run CSV tests and verify they fail**
+- [ ] **步驟 3：執行 CSV tests 並確認會失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_csv_compat.py -q
 ```
 
-Expected: FAIL because `renew_curve.csv_compat` does not exist.
+預期：FAIL，因為 `renew_curve.csv_compat` 尚不存在。
 
-- [ ] **Step 4: Implement CSV compatibility module**
+- [ ] **步驟 4：實作 CSV compatibility module**
 
-Create `src/renew_curve/csv_compat.py` with these functions:
+建立包含這些 functions 的 `src/renew_curve/csv_compat.py`：
 
 ```python
 from __future__ import annotations
@@ -886,29 +886,29 @@ def export_legacy_csv(db_path: str | Path, csv_path: str | Path) -> None:
             )
 ```
 
-- [ ] **Step 5: Run CSV tests**
+- [ ] **步驟 5：執行 CSV tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_csv_compat.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 6: Run all non-GUI tests**
+- [ ] **步驟 6：執行所有 non-GUI tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_scheduler.py tests/test_db.py tests/test_csv_compat.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 7: Commit CSV compatibility**
+- [ ] **步驟 7：Commit CSV compatibility**
 
-Run:
+執行：
 
 ```powershell
 git add src/renew_curve/csv_compat.py tests/test_csv_compat.py tests/fixtures/legacy_export.csv
@@ -917,18 +917,18 @@ git commit -m "feat: support legacy csv migration"
 
 ---
 
-### Task 5: Build PySide6 Main Window Shell
+### 任務 5：建立 PySide6 Main Window Shell
 
-**Files:**
-- Create: `src/renew_curve/app.py`
-- Create: `src/renew_curve/ui/__init__.py`
-- Create: `src/renew_curve/ui/theme.py`
-- Create: `src/renew_curve/ui/main_window.py`
-- Create: `tests/test_gui_imports.py`
+**檔案：**
+- 建立：`src/renew_curve/app.py`
+- 建立：`src/renew_curve/ui/__init__.py`
+- 建立：`src/renew_curve/ui/theme.py`
+- 建立：`src/renew_curve/ui/main_window.py`
+- 建立：`tests/test_gui_imports.py`
 
-- [ ] **Step 1: Write failing GUI import smoke test**
+- [ ] **步驟 1：撰寫會失敗的 GUI import smoke test**
 
-Create `tests/test_gui_imports.py`:
+建立 `tests/test_gui_imports.py`：
 
 ```python
 def test_main_window_imports_without_starting_event_loop():
@@ -937,27 +937,27 @@ def test_main_window_imports_without_starting_event_loop():
     assert MainWindow.__name__ == "MainWindow"
 ```
 
-- [ ] **Step 2: Run GUI import test and verify failure**
+- [ ] **步驟 2：執行 GUI import test 並確認失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_gui_imports.py -q
 ```
 
-Expected: FAIL because `renew_curve.ui.main_window` does not exist.
+預期：FAIL，因為 `renew_curve.ui.main_window` 尚不存在。
 
-- [ ] **Step 3: Create UI package marker**
+- [ ] **步驟 3：建立 UI package marker**
 
-Create `src/renew_curve/ui/__init__.py`:
+建立 `src/renew_curve/ui/__init__.py`：
 
 ```python
 """PySide6 UI components for v8."""
 ```
 
-- [ ] **Step 4: Create theme stylesheet helper**
+- [ ] **步驟 4：建立 theme stylesheet helper**
 
-Create `src/renew_curve/ui/theme.py`:
+建立 `src/renew_curve/ui/theme.py`：
 
 ```python
 from __future__ import annotations
@@ -1021,9 +1021,9 @@ def build_stylesheet(*, accent: str = "blue", dark: bool = False, compact: bool 
     """
 ```
 
-- [ ] **Step 5: Create main window shell**
+- [ ] **步驟 5：建立 main window shell**
 
-Create `src/renew_curve/ui/main_window.py`:
+建立 `src/renew_curve/ui/main_window.py`：
 
 ```python
 from __future__ import annotations
@@ -1168,9 +1168,9 @@ class MainWindow(QMainWindow):
         self.task_table.resizeColumnsToContents()
 ```
 
-- [ ] **Step 6: Create app entrypoint**
+- [ ] **步驟 6：建立 app entrypoint**
 
-Create `src/renew_curve/app.py`:
+建立 `src/renew_curve/app.py`：
 
 ```python
 from __future__ import annotations
@@ -1193,29 +1193,29 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 7: Run GUI import test**
+- [ ] **步驟 7：執行 GUI import test**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_gui_imports.py -q
 ```
 
-Expected: PASS if PySide6 is installed. If PySide6 is missing, install dev dependencies first with `python -m pip install -e ".[dev]"`.
+預期：如果 PySide6 已安裝則 PASS。如果缺少 PySide6，先用 `python -m pip install -e ".[dev]"` 安裝 dev dependencies。
 
-- [ ] **Step 8: Run full test suite**
+- [ ] **步驟 8：執行完整 test suite**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 9: Commit GUI shell**
+- [ ] **步驟 9：Commit GUI shell**
 
-Run:
+執行：
 
 ```powershell
 git add src/renew_curve/app.py src/renew_curve/ui tests/test_gui_imports.py
@@ -1224,16 +1224,16 @@ git commit -m "feat: add pySide6 v8 main window shell"
 
 ---
 
-### Task 6: Add Import/Export Dialogs And Main Window Actions
+### 任務 6：新增 Import/Export Dialogs 與 Main Window Actions
 
-**Files:**
-- Create: `src/renew_curve/ui/dialogs.py`
-- Modify: `src/renew_curve/ui/main_window.py`
-- Create: `tests/test_gui_actions.py`
+**檔案：**
+- 建立：`src/renew_curve/ui/dialogs.py`
+- 修改：`src/renew_curve/ui/main_window.py`
+- 建立：`tests/test_gui_actions.py`
 
-- [ ] **Step 1: Write failing dialog import test**
+- [ ] **步驟 1：撰寫會失敗的 dialog import test**
 
-Create `tests/test_gui_actions.py`:
+建立 `tests/test_gui_actions.py`：
 
 ```python
 def test_dialog_classes_import():
@@ -1243,19 +1243,19 @@ def test_dialog_classes_import():
     assert TaskDialog.__name__ == "TaskDialog"
 ```
 
-- [ ] **Step 2: Run dialog test and verify failure**
+- [ ] **步驟 2：執行 dialog test 並確認失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_gui_actions.py -q
 ```
 
-Expected: FAIL because `dialogs.py` does not exist.
+預期：FAIL，因為 `dialogs.py` 尚不存在。
 
-- [ ] **Step 3: Create dialogs**
+- [ ] **步驟 3：建立 dialogs**
 
-Create `src/renew_curve/ui/dialogs.py`:
+建立 `src/renew_curve/ui/dialogs.py`：
 
 ```python
 from __future__ import annotations
@@ -1322,9 +1322,9 @@ class ImportExportDialog(QDialog):
         return path
 ```
 
-- [ ] **Step 4: Wire sidebar import/export and new-task actions**
+- [ ] **步驟 4：串接 sidebar import/export 與 new-task actions**
 
-Modify `src/renew_curve/ui/main_window.py`:
+修改 `src/renew_curve/ui/main_window.py`：
 
 ```python
 from PySide6.QtWidgets import QMessageBox
@@ -1332,14 +1332,14 @@ from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.ui.dialogs import ImportExportDialog, TaskDialog
 ```
 
-Store the import/export sidebar button as `self.import_export_button` and connect:
+將 import/export sidebar button 儲存為 `self.import_export_button` 並連接：
 
 ```python
 self.new_task_button.clicked.connect(self.open_task_dialog)
 self.import_export_button.clicked.connect(self.open_import_export_dialog)
 ```
 
-Add methods:
+新增 methods：
 
 ```python
 def open_task_dialog(self) -> None:
@@ -1380,29 +1380,29 @@ def _export_csv(self, dialog: ImportExportDialog) -> None:
     QMessageBox.information(self, "Export complete", "CSV export finished.")
 ```
 
-- [ ] **Step 5: Run GUI action tests**
+- [ ] **步驟 5：執行 GUI action tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_gui_actions.py tests/test_gui_imports.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 6: Run full test suite**
+- [ ] **步驟 6：執行完整 test suite**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 7: Commit import/export UI**
+- [ ] **步驟 7：Commit import/export UI**
 
-Run:
+執行：
 
 ```powershell
 git add src/renew_curve/ui/dialogs.py src/renew_curve/ui/main_window.py tests/test_gui_actions.py
@@ -1411,18 +1411,18 @@ git commit -m "feat: add v8 import export dialogs"
 
 ---
 
-### Task 7: Add Personalization Settings
+### 任務 7：新增 Personalization Settings
 
-**Files:**
-- Modify: `src/renew_curve/db.py`
-- Modify: `src/renew_curve/ui/theme.py`
-- Modify: `src/renew_curve/ui/main_window.py`
-- Modify: `src/renew_curve/ui/dialogs.py`
-- Create: `tests/test_settings.py`
+**檔案：**
+- 修改：`src/renew_curve/db.py`
+- 修改：`src/renew_curve/ui/theme.py`
+- 修改：`src/renew_curve/ui/main_window.py`
+- 修改：`src/renew_curve/ui/dialogs.py`
+- 建立：`tests/test_settings.py`
 
-- [ ] **Step 1: Write failing settings tests**
+- [ ] **步驟 1：撰寫會失敗的 settings tests**
 
-Create `tests/test_settings.py`:
+建立 `tests/test_settings.py`：
 
 ```python
 from renew_curve.db import ReminderRepository, connect, init_db
@@ -1440,19 +1440,19 @@ def test_settings_round_trip(tmp_path):
         assert repo.get_setting("density", "comfortable") == "comfortable"
 ```
 
-- [ ] **Step 2: Run settings test and verify failure**
+- [ ] **步驟 2：執行 settings test 並確認失敗**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_settings.py -q
 ```
 
-Expected: FAIL because repository settings methods are missing.
+預期：FAIL，因為 repository settings methods 尚缺。
 
-- [ ] **Step 3: Add settings methods to repository**
+- [ ] **步驟 3：將 settings methods 新增到 repository**
 
-Add to `ReminderRepository` in `src/renew_curve/db.py`:
+新增到 `src/renew_curve/db.py` 中的 `ReminderRepository`：
 
 ```python
 def set_setting(self, key: str, value: str) -> None:
@@ -1468,19 +1468,19 @@ def get_setting(self, key: str, default: str = "") -> str:
     return default if row is None else str(row[0])
 ```
 
-- [ ] **Step 4: Run settings tests**
+- [ ] **步驟 4：執行 settings tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_settings.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 5: Add settings UI**
+- [ ] **步驟 5：新增 settings UI**
 
-Add a `SettingsDialog` to `src/renew_curve/ui/dialogs.py` with combo boxes for theme, accent, density, and default snooze:
+將 `SettingsDialog` 新增到 `src/renew_curve/ui/dialogs.py`，包含 theme、accent、density 與 default snooze 的 combo boxes：
 
 ```python
 class SettingsDialog(QDialog):
@@ -1519,9 +1519,9 @@ class SettingsDialog(QDialog):
         }
 ```
 
-- [ ] **Step 6: Wire settings sidebar action**
+- [ ] **步驟 6：串接 settings sidebar action**
 
-In `MainWindow`, import `SettingsDialog`, store the settings sidebar button as `self.settings_button`, connect it to `open_settings_dialog`, and add:
+在 `MainWindow` 中 import `SettingsDialog`，將 settings sidebar button 儲存為 `self.settings_button`，連接到 `open_settings_dialog`，並新增：
 
 ```python
 def open_settings_dialog(self) -> None:
@@ -1544,19 +1544,19 @@ def open_settings_dialog(self) -> None:
     self.setStyleSheet(build_stylesheet(accent=values["accent"], dark=values["theme"] == "dark", compact=values["density"] == "compact"))
 ```
 
-- [ ] **Step 7: Run settings and GUI tests**
+- [ ] **步驟 7：執行 settings 與 GUI tests**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest tests/test_settings.py tests/test_gui_actions.py tests/test_gui_imports.py -q
 ```
 
-Expected: PASS.
+預期：PASS。
 
-- [ ] **Step 8: Commit personalization**
+- [ ] **步驟 8：Commit personalization**
 
-Run:
+執行：
 
 ```powershell
 git add src/renew_curve/db.py src/renew_curve/ui/theme.py src/renew_curve/ui/main_window.py src/renew_curve/ui/dialogs.py tests/test_settings.py
@@ -1565,15 +1565,15 @@ git commit -m "feat: add v8 personalization settings"
 
 ---
 
-### Task 8: Update Documentation And v8 Record
+### 任務 8：更新 Documentation 與 v8 Record
 
-**Files:**
-- Modify: `README.md`
-- Create: `update_record/curve_tool_record_v8.md`
+**檔案：**
+- 修改：`README.md`
+- 建立：`update_record/curve_tool_record_v8.md`
 
-- [ ] **Step 1: Update README**
+- [ ] **步驟 1：更新 README**
 
-Modify `README.md` to include:
+修改 `README.md` 以包含：
 
 ```markdown
 ## v8 Preview
@@ -1599,11 +1599,11 @@ Two modes are available:
 If validation fails, the current v8 database is left unchanged.
 ```
 
-Also clarify that report/email features are not included in the v8 scope unless they are approved as a future explicitly scoped release.
+同時釐清：除非未來被核准為明確範圍內的 release，否則 report/email features 不包含在 v8 範圍內。
 
-- [ ] **Step 2: Create v8 update record**
+- [ ] **步驟 2：建立 v8 update record**
 
-Create `update_record/curve_tool_record_v8.md`:
+建立 `update_record/curve_tool_record_v8.md`：
 
 ```markdown
 # 遺忘曲線提醒工具更新紀錄（v8）
@@ -1638,20 +1638,20 @@ v8 是一次現代化重構版本，重點是新的 PySide6 介面與舊資料�
 - 背景圖片完整備份不透過 CSV 處理，個人化設定保存在 v8 SQLite settings 表。
 ```
 
-- [ ] **Step 3: Run full verification**
+- [ ] **步驟 3：執行完整 verification**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest -q
 python -m py_compile src/renew_curve/app.py curve.py
 ```
 
-Expected: both commands complete successfully.
+預期：兩個 commands 都成功完成。
 
-- [ ] **Step 4: Commit docs**
+- [ ] **步驟 4：Commit docs**
 
-Run:
+執行：
 
 ```powershell
 git add README.md update_record/curve_tool_record_v8.md
@@ -1660,47 +1660,47 @@ git commit -m "docs: document v8 migration release"
 
 ---
 
-### Task 9: Manual GUI Verification And Final Git Check
+### 任務 9：Manual GUI Verification 與 Final Git Check
 
-**Files:**
-- No expected source edits unless verification finds a bug.
+**檔案：**
+- 除非 verification 發現 bug，否則預期不會編輯 source。
 
-- [ ] **Step 1: Start v8 app**
+- [ ] **步驟 1：啟動 v8 app**
 
-Run:
+執行：
 
 ```powershell
 python -m renew_curve.app
 ```
 
-Expected: PySide6 window opens with left sidebar, central task workspace, and right calendar panel.
+預期：PySide6 window 開啟，包含左側 sidebar、中央 task workspace 與右側 calendar panel。
 
-- [ ] **Step 2: Manual import verification**
+- [ ] **步驟 2：Manual import verification**
 
-In the GUI:
+在 GUI 中：
 
-1. Open `Import/Export`.
-2. Import `tests/fixtures/legacy_export.csv` using replace mode.
-3. Confirm the task table shows `英文單字 Unit 12` and `Python async`.
-4. Export a CSV to a temporary path.
-5. Import that exported CSV into a fresh database through the tested function or GUI replace mode.
+1. 開啟 `Import/Export`。
+2. 使用 replace mode 匯入 `tests/fixtures/legacy_export.csv`。
+3. 確認 task table 顯示 `英文單字 Unit 12` 與 `Python async`。
+4. 將 CSV 匯出到 temporary path。
+5. 透過已測試的 function 或 GUI replace mode，將該匯出 CSV 匯入 fresh database。
 
-Expected: data appears and no error dialog is shown.
+預期：資料出現，且沒有顯示 error dialog。
 
-- [ ] **Step 3: Manual personalization verification**
+- [ ] **步驟 3：Manual personalization verification**
 
-In the GUI:
+在 GUI 中：
 
-1. Open `Settings`.
-2. Change accent color and density.
-3. Confirm the stylesheet updates.
-4. Reopen settings and confirm saved values appear.
+1. 開啟 `Settings`。
+2. 變更 accent color 與 density。
+3. 確認 stylesheet 更新。
+4. 重新開啟 settings，確認 saved values 出現。
 
-Expected: settings persist in SQLite.
+預期：settings 持久化保存在 SQLite。
 
-- [ ] **Step 4: Final automated verification**
+- [ ] **步驟 4：Final automated verification**
 
-Run:
+執行：
 
 ```powershell
 python -m pytest -q
@@ -1708,19 +1708,19 @@ python -m py_compile src/renew_curve/app.py curve.py
 git status --short
 ```
 
-Expected:
+預期：
 
-- pytest passes.
-- py_compile passes.
-- Git status shows only intentional tracked changes or is clean after commits.
+- pytest 通過。
+- py_compile 通過。
+- Git status 只顯示 intentional tracked changes，或在 commits 後是 clean。
 
-- [ ] **Step 5: Final commit for verification fixes if needed**
+- [ ] **步驟 5：如有需要，為 verification fixes 建立 final commit**
 
-If verification required source fixes, commit them:
+如果 verification 需要 source fixes，commit 它們：
 
 ```powershell
 git add <fixed-files>
 git commit -m "fix: polish v8 verification issues"
 ```
 
-If no fixes were needed, do not create an empty commit.
+如果不需要 fixes，不要建立 empty commit。

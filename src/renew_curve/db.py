@@ -101,7 +101,6 @@ class ReminderRepository:
                 int(is_completed),
             ),
         )
-        self._conn.commit()
         return int(cursor.lastrowid)
 
     def create_reminder(
@@ -120,7 +119,6 @@ class ReminderRepository:
             ),
         )
         self.recalculate_task_progress(draft.task_id)
-        self._conn.commit()
         return int(cursor.lastrowid)
 
     def get_task(self, task_id: int) -> Task | None:
@@ -206,7 +204,6 @@ class ReminderRepository:
             "UPDATE reminders SET reminded = 1 WHERE id = ?", (reminder_id,)
         )
         self.recalculate_task_progress(int(row["task_id"]))
-        self._conn.commit()
 
     def recalculate_task_progress(self, task_id: int) -> float:
         row = self._conn.execute(
@@ -220,9 +217,12 @@ class ReminderRepository:
         progress = calculate_progress_percent(
             int(row["total"]), int(row["completed"])
         )
+        total = int(row["total"])
+        completed = int(row["completed"])
+        is_completed = total > 0 and completed == total
         self._conn.execute(
-            "UPDATE tasks SET progress_percent = ? WHERE id = ?",
-            (progress, task_id),
+            "UPDATE tasks SET progress_percent = ?, is_completed = ? WHERE id = ?",
+            (progress, int(is_completed), task_id),
         )
         return progress
 

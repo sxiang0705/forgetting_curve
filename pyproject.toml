@@ -12,6 +12,9 @@ dev = [
   "pytest>=8.0",
 ]
 
+[project.scripts]
+renew-curve = "renew_curve.app:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

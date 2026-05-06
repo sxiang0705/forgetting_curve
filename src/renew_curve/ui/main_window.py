@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -30,10 +31,8 @@ class MainWindow(QMainWindow):
     def __init__(self, db_path: str = "renew_curve_v8.db") -> None:
         super().__init__()
         self.db_path = Path(db_path)
-        self.conn = connect(self.db_path)
-        init_db(self.conn)
-        self.repository = ReminderRepository(self.conn)
-        self._database_closed = False
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
 
         self.setWindowTitle("Renew Curve v8")
         self.resize(1180, 760)
@@ -43,18 +42,17 @@ class MainWindow(QMainWindow):
         self.refresh_tasks()
 
     def close_database(self) -> None:
-        if self._database_closed:
-            return
-
-        self.conn.close()
-        self._database_closed = True
+        pass
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.close_database()
         super().closeEvent(event)
 
     def refresh_tasks(self) -> None:
-        tasks = self.repository.list_tasks()
+        with closing(connect(self.db_path)) as conn:
+            repository = ReminderRepository(conn)
+            tasks = repository.list_tasks()
+
         self.task_table.setRowCount(len(tasks))
 
         for row_index, task in enumerate(tasks):

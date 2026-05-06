@@ -4,3 +4,18 @@ __pycache__/
 # SQLite 本地資料庫（看你需求；若要一起上傳可把這行刪掉）
 reminder.db
 
+# 本機開發環境與暫存資料
+.venv/
+.pytest_cache/
+.superpowers/
+.worktrees
+.worktrees/
+
+# 建置產物
+build/
+dist/
+
+# SQLite 本機資料庫
+*.db
+*.sqlite
+*.sqlite3

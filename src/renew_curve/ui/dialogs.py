@@ -17,6 +17,60 @@ from PySide6.QtWidgets import (
 )
 
 
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None, current: dict[str, str] | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        current = current or {}
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["light", "dark", "system"])
+        self._set_current(self.theme_combo, current.get("theme", "light"))
+
+        self.accent_combo = QComboBox()
+        self.accent_combo.addItems(["blue", "green", "purple", "orange", "gray"])
+        self._set_current(self.accent_combo, current.get("accent", "blue"))
+
+        self.density_combo = QComboBox()
+        self.density_combo.addItems(["comfortable", "compact"])
+        self._set_current(self.density_combo, current.get("density", "comfortable"))
+
+        self.snooze_combo = QComboBox()
+        self.snooze_combo.addItems(["10m", "1h", "tomorrow"])
+        self._set_current(self.snooze_combo, current.get("default_snooze", "10m"))
+
+        form = QFormLayout()
+        form.addRow("Theme", self.theme_combo)
+        form.addRow("Accent", self.accent_combo)
+        form.addRow("Density", self.density_combo)
+        form.addRow("Default snooze", self.snooze_combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+
+    def values(self) -> dict[str, str]:
+        return {
+            "theme": self.theme_combo.currentText(),
+            "accent": self.accent_combo.currentText(),
+            "density": self.density_combo.currentText(),
+            "default_snooze": self.snooze_combo.currentText(),
+        }
+
+    @staticmethod
+    def _set_current(combo: QComboBox, value: str) -> None:
+        index = combo.findText(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+
 class TaskDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)

@@ -8,6 +8,7 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCalendarWidget,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -26,7 +27,7 @@ from PySide6.QtWidgets import (
 from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.db import ReminderRepository, connect, init_db
 from renew_curve.models import Task
-from renew_curve.ui.dialogs import ImportExportDialog, TaskDialog
+from renew_curve.ui.dialogs import ImportExportDialog, SettingsDialog, TaskDialog
 from renew_curve.ui.theme import build_stylesheet
 
 
@@ -39,7 +40,9 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Renew Curve v8")
         self.resize(1180, 760)
-        self.setStyleSheet(build_stylesheet())
+        self.setStyleSheet(
+            self._stylesheet_for_settings(self._load_personalization_settings())
+        )
 
         self._build_ui()
         self.refresh_tasks()
@@ -118,9 +121,10 @@ class MainWindow(QMainWindow):
         self.import_export_button.clicked.connect(self.open_import_export_dialog)
         layout.addWidget(self.import_export_button)
 
-        settings_button = QPushButton("Settings")
-        settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout.addWidget(settings_button)
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_button.clicked.connect(self.open_settings_dialog)
+        layout.addWidget(self.settings_button)
 
         layout.addStretch(1)
 
@@ -250,6 +254,44 @@ class MainWindow(QMainWindow):
         )
         dialog.export_button.clicked.connect(lambda: self._export_csv(dialog))
         dialog.exec()
+
+    def open_settings_dialog(self) -> None:
+        current = self._load_personalization_settings()
+        dialog = SettingsDialog(self, current)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        values = dialog.values()
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            for key, value in values.items():
+                repository.set_setting(key, value)
+
+        self.setStyleSheet(self._stylesheet_for_settings(values))
+
+    def _load_personalization_settings(self) -> dict[str, str]:
+        defaults = {
+            "theme": "light",
+            "accent": "blue",
+            "density": "comfortable",
+            "default_snooze": "10m",
+        }
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            return {
+                key: repository.get_setting(key, default)
+                for key, default in defaults.items()
+            }
+
+    @staticmethod
+    def _stylesheet_for_settings(settings: dict[str, str]) -> str:
+        return build_stylesheet(
+            accent=settings.get("accent", "blue"),
+            dark=settings.get("theme") == "dark",
+            compact=settings.get("density") == "compact",
+        )
 
     def _import_csv(self, dialog: ImportExportDialog, mode: str) -> None:
         path = dialog.choose_csv_open()

@@ -111,6 +111,17 @@ QLineEdit {{
     padding: {padding};
 }}
 
+QComboBox, QTextEdit {{
+    background: {surface};
+    border: 1px solid {border};
+    border-radius: 6px;
+    padding: {padding};
+}}
+
+QDialog {{
+    background: {window_bg};
+}}
+
 QCalendarWidget QWidget {{
     alternate-background-color: {table_alt};
 }}

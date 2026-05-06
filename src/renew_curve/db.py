@@ -205,6 +205,19 @@ class ReminderRepository:
         )
         self.recalculate_task_progress(int(row["task_id"]))
 
+    def set_setting(self, key: str, value: str) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        self._conn.commit()
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        row = self._conn.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ).fetchone()
+        return default if row is None else str(row[0])
+
     def recalculate_task_progress(self, task_id: int) -> float:
         row = self._conn.execute(
             """

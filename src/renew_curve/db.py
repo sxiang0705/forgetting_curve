@@ -6,7 +6,14 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from renew_curve.models import Reminder, ReminderDraft, ReminderItem, Task, TaskDraft
+from renew_curve.models import (
+    Reminder,
+    ReminderDraft,
+    ReminderItem,
+    ReportStats,
+    Task,
+    TaskDraft,
+)
 from renew_curve.scheduler import calculate_progress_percent
 
 
@@ -310,6 +317,83 @@ class ReminderRepository:
             (_dump_datetime(remind_time), reminder_id),
         )
         self.recalculate_task_progress(int(row["task_id"]))
+
+    def snooze_reminder_group(self, reminder_id: int, delta: dt.timedelta) -> int:
+        row = self._conn.execute(
+            "SELECT task_id, remind_time FROM reminders WHERE id = ? AND reminded = 0",
+            (reminder_id,),
+        ).fetchone()
+        if row is None:
+            return 0
+
+        task_id = int(row["task_id"])
+        current_time = _load_datetime(str(row["remind_time"]))
+        pending = self._conn.execute(
+            """
+            SELECT id, remind_time
+            FROM reminders
+            WHERE task_id = ? AND reminded = 0 AND remind_time >= ?
+            ORDER BY remind_time, id
+            """,
+            (task_id, _dump_datetime(current_time)),
+        ).fetchall()
+        for item in pending:
+            new_time = _load_datetime(str(item["remind_time"])) + delta
+            self._conn.execute(
+                "UPDATE reminders SET remind_time = ? WHERE id = ?",
+                (_dump_datetime(new_time), int(item["id"])),
+            )
+        self.recalculate_task_progress(task_id)
+        return len(pending)
+
+    def report_stats(self, today: dt.date) -> ReportStats:
+        total_tasks = int(self._conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+        start = dt.datetime.combine(today, dt.time.min)
+        end = start + dt.timedelta(days=1)
+        today_reminders = int(
+            self._conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM reminders
+                WHERE reminded = 0 AND remind_time >= ? AND remind_time < ?
+                """,
+                (_dump_datetime(start), _dump_datetime(end)),
+            ).fetchone()[0]
+        )
+        pending = int(
+            self._conn.execute(
+                "SELECT COUNT(*) FROM reminders WHERE reminded = 0"
+            ).fetchone()[0]
+        )
+        completed = int(
+            self._conn.execute(
+                "SELECT COUNT(*) FROM reminders WHERE reminded = 1"
+            ).fetchone()[0]
+        )
+        total = pending + completed
+        return ReportStats(
+            total_tasks=total_tasks,
+            today_reminders=today_reminders,
+            pending_reminders=pending,
+            completed_reminders=completed,
+            total_completion_percent=calculate_progress_percent(total, completed),
+        )
+
+    def weekly_completion_rate(self, end_day: dt.date) -> tuple[int, int, float]:
+        start_day = end_day - dt.timedelta(days=6)
+        start = dt.datetime.combine(start_day, dt.time.min)
+        end = dt.datetime.combine(end_day + dt.timedelta(days=1), dt.time.min)
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS total, COALESCE(SUM(reminded), 0) AS completed
+            FROM reminders
+            WHERE remind_time >= ? AND remind_time < ?
+            """,
+            (_dump_datetime(start), _dump_datetime(end)),
+        ).fetchone()
+        completed = int(row["completed"])
+        total = int(row["total"])
+        return completed, total, calculate_progress_percent(total, completed)
 
     def set_setting(self, key: str, value: str) -> None:
         self._conn.execute(

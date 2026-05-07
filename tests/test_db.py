@@ -228,3 +228,57 @@ def test_repository_counts_reminders_by_date_and_categories(tmp_path):
         dt.date(2026, 5, 9): 1,
     }
     assert categories == ["英文單字", "計算機概論"]
+
+
+def test_repository_bulk_snoozes_future_pending_reminders(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        task_id = repo.create_task(
+            TaskDraft("單字", "英文單字", "初級", "", "遺忘曲線", dt.datetime(2026, 5, 6, 9, 0))
+        )
+        first_id = repo.create_reminder(
+            ReminderDraft(task_id, dt.datetime(2026, 5, 7, 9, 0))
+        )
+        second_id = repo.create_reminder(
+            ReminderDraft(task_id, dt.datetime(2026, 5, 9, 9, 0))
+        )
+        third_id = repo.create_reminder(
+            ReminderDraft(task_id, dt.datetime(2026, 5, 13, 9, 0))
+        )
+
+        changed = repo.snooze_reminder_group(first_id, dt.timedelta(days=1))
+        reminders = repo.list_reminders(task_id)
+
+    assert changed == 3
+    assert [reminder.id for reminder in reminders] == [first_id, second_id, third_id]
+    assert [reminder.remind_time for reminder in reminders] == [
+        dt.datetime(2026, 5, 8, 9, 0),
+        dt.datetime(2026, 5, 10, 9, 0),
+        dt.datetime(2026, 5, 14, 9, 0),
+    ]
+
+
+def test_repository_report_stats_and_weekly_completion(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        task_id = repo.create_task(
+            TaskDraft("單字", "英文單字", "初級", "", "遺忘曲線", dt.datetime(2026, 4, 29, 9, 0))
+        )
+        done_id = repo.create_reminder(
+            ReminderDraft(task_id, dt.datetime(2026, 5, 1, 9, 0))
+        )
+        repo.create_reminder(ReminderDraft(task_id, dt.datetime(2026, 5, 2, 9, 0)))
+        repo.mark_reminder_done(done_id)
+
+        stats = repo.report_stats(today=dt.date(2026, 5, 2))
+        completion = repo.weekly_completion_rate(end_day=dt.date(2026, 5, 2))
+
+    assert stats.total_tasks == 1
+    assert stats.today_reminders == 1
+    assert stats.pending_reminders == 1
+    assert stats.completed_reminders == 1
+    assert completion == (1, 2, 50.0)

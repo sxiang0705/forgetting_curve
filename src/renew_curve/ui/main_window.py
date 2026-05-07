@@ -277,16 +277,40 @@ class MainWindow(QMainWindow):
 
     def open_task_dialog(self) -> None:
         dialog = TaskDialog(self)
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            if hasattr(dialog, "set_categories"):
+                dialog.set_categories(repository.list_categories())
+
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
         values = dialog.values()
-        title = str(values["title"]).strip()
-        if not title:
-            QMessageBox.warning(self, "Task required", "Please enter a task title.")
+        try:
+            self._create_task_from_values(values)
+        except ValueError as exc:
+            QMessageBox.warning(self, "新增任務失敗", str(exc))
             return
 
+        self.refresh_tasks()
+
+    def _create_task_from_values(self, values: dict[str, object]) -> int:
+        title = str(values["title"]).strip()
+        if not title:
+            raise ValueError("請輸入任務名稱。")
+
         start_time = values["start_time"]
+        review_times = values.get("review_times")
+        if not isinstance(start_time, dt.datetime):
+            raise ValueError("開始時間格式錯誤。")
+        if review_times is None and values.get("reminder_method") == "遺忘曲線":
+            review_times = generated_review_times(
+                start_time, int(values.get("review_count", 5))
+            )
+        if not isinstance(review_times, list):
+            raise ValueError("複習時間格式錯誤。")
+
         with closing(connect(self.db_path)) as conn:
             init_db(conn)
             repository = ReminderRepository(conn)
@@ -301,15 +325,13 @@ class MainWindow(QMainWindow):
                         start_time=start_time,
                     )
                 )
-                if values["reminder_method"] == "遺忘曲線":
-                    for remind_time in generated_review_times(
-                        start_time, int(values["review_count"])
-                    ):
-                        repository.create_reminder(
-                            ReminderDraft(task_id=task_id, remind_time=remind_time)
-                        )
-
-        self.refresh_tasks()
+                for remind_time in review_times:
+                    if not isinstance(remind_time, dt.datetime):
+                        raise ValueError("複習時間格式錯誤。")
+                    repository.create_reminder(
+                        ReminderDraft(task_id=task_id, remind_time=remind_time)
+                    )
+                return task_id
 
     def complete_selected_next_reminder(self) -> None:
         reminder_id = self._selected_next_reminder_id()

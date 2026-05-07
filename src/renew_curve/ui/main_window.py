@@ -25,11 +25,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from renew_curve.backup import export_full_backup, import_full_backup
 from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.db import ReminderRepository, connect, init_db
 from renew_curve.models import ReminderDraft, Task, TaskDraft
 from renew_curve.scheduler import generated_review_times, snooze_until
-from renew_curve.ui.dialogs import ImportExportDialog, SettingsDialog, TaskDialog
+from renew_curve.ui.dialogs import DataDialog, ImportExportDialog, SettingsDialog, TaskDialog
 from renew_curve.ui.personalization import (
     default_personalization_settings,
     stylesheet_for_personalization,
@@ -387,14 +388,16 @@ class MainWindow(QMainWindow):
         return row
 
     def open_import_export_dialog(self) -> None:
-        dialog = ImportExportDialog(self)
-        dialog.import_replace_button.clicked.connect(
+        dialog = DataDialog(self)
+        dialog.import_legacy_csv_button.clicked.connect(
             lambda: self._import_csv(dialog, "replace")
         )
-        dialog.import_merge_button.clicked.connect(
-            lambda: self._import_csv(dialog, "merge")
+        dialog.export_full_backup_button.clicked.connect(
+            lambda: self._export_full_backup(dialog)
         )
-        dialog.export_button.clicked.connect(lambda: self._export_csv(dialog))
+        dialog.import_full_backup_button.clicked.connect(
+            lambda: self._import_full_backup(dialog)
+        )
         dialog.exec()
 
     def open_settings_dialog(self) -> None:
@@ -427,7 +430,37 @@ class MainWindow(QMainWindow):
     def _stylesheet_for_settings(settings: dict[str, str]) -> str:
         return stylesheet_for_personalization(settings)
 
-    def _import_csv(self, dialog: ImportExportDialog, mode: str) -> None:
+    def _assets_dir(self) -> Path:
+        return self.db_path.parent / "assets"
+
+    def _export_full_backup(self, dialog: DataDialog) -> None:
+        path = dialog.choose_zip_save()
+        if path is None:
+            return
+
+        try:
+            export_full_backup(self.db_path, self._assets_dir(), path)
+        except Exception as exc:
+            QMessageBox.critical(self, "匯出失敗", str(exc))
+            return
+
+        QMessageBox.information(self, "匯出完成", f"已匯出完整資料到 {path}。")
+
+    def _import_full_backup(self, dialog: DataDialog) -> None:
+        path = dialog.choose_zip_open()
+        if path is None:
+            return
+
+        try:
+            import_full_backup(path, self.db_path, self._assets_dir())
+        except Exception as exc:
+            QMessageBox.critical(self, "匯入失敗", str(exc))
+            return
+
+        self.refresh_tasks()
+        QMessageBox.information(self, "匯入完成", "完整資料已還原。")
+
+    def _import_csv(self, dialog: DataDialog, mode: str) -> None:
         path = dialog.choose_csv_open()
         if path is None:
             return

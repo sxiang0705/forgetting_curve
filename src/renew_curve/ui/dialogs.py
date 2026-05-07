@@ -163,43 +163,79 @@ class TaskDialog(QDialog):
         }
 
 
-class ImportExportDialog(QDialog):
+class DataDialog(QDialog):
+    import_legacy_csv_button = None
+    export_full_backup_button = None
+    import_full_backup_button = None
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("匯入 / 匯出")
+        self.setWindowTitle("報表 / 資料")
 
         description = QLabel(
-            "支援匯入舊版 Tkinter 匯出的 CSV 檔案。"
+            "這裡只保留三個主要入口。CSV 用於舊版資料轉移，完整資料請使用 ZIP。"
         )
         description.setWordWrap(True)
 
-        self.import_replace_button = QPushButton("取代匯入")
-        self.import_merge_button = QPushButton("合併匯入")
-        self.export_button = QPushButton("匯出")
+        self.import_legacy_csv_button = QPushButton("1. 匯入舊版 CSV")
+        self.export_full_backup_button = QPushButton("2. 匯出完整資料")
+        self.import_full_backup_button = QPushButton("3. 匯入完整資料")
+        self.close_button = QPushButton("關閉")
+        self.close_button.clicked.connect(self.accept)
 
-        actions = QHBoxLayout()
-        actions.addWidget(self.import_replace_button)
-        actions.addWidget(self.import_merge_button)
-        actions.addWidget(self.export_button)
+        csv_hint = QLabel("請選擇舊版 Forgetting Curve 匯出的 .csv。")
+        csv_hint.setWordWrap(True)
+        export_hint = QLabel("會輸出 .zip，包含 SQLite 資料庫、背景、貼圖與個人化設定。")
+        export_hint.setWordWrap(True)
+        import_hint = QLabel("請選擇 v8 完整資料包 .zip，系統會先驗證再替換目前資料。")
+        import_hint.setWordWrap(True)
 
         layout = QVBoxLayout(self)
         layout.addWidget(description)
-        layout.addLayout(actions)
+        layout.addWidget(self.import_legacy_csv_button)
+        layout.addWidget(csv_hint)
+        layout.addWidget(self.export_full_backup_button)
+        layout.addWidget(export_hint)
+        layout.addWidget(self.import_full_backup_button)
+        layout.addWidget(import_hint)
+        layout.addWidget(self.close_button)
 
     def choose_csv_open(self) -> Path | None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "選擇要匯入的 CSV",
+            "匯入舊版 CSV",
             "",
-            "CSV files (*.csv);;All files (*.*)",
+            "CSV files (*.csv)",
+        )
+        return Path(path) if path else None
+
+    def choose_zip_open(self) -> Path | None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "匯入完整資料",
+            "",
+            "ZIP files (*.zip)",
+        )
+        return Path(path) if path else None
+
+    def choose_zip_save(self) -> Path | None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "匯出完整資料",
+            "",
+            "ZIP files (*.zip)",
         )
         return Path(path) if path else None
 
     def choose_csv_save(self) -> Path | None:
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "選擇 CSV 匯出位置",
+            "匯出 CSV 備份",
             "",
-            "CSV files (*.csv);;All files (*.*)",
+            "CSV files (*.csv)",
         )
         return Path(path) if path else None
+
+
+class ImportExportDialog(DataDialog):
+    pass

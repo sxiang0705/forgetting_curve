@@ -25,3 +25,18 @@ def test_main_window_can_create_manual_reminders():
     from renew_curve.ui.main_window import MainWindow
 
     assert hasattr(MainWindow, "_create_task_from_values")
+
+
+def test_data_dialog_exposes_three_primary_actions():
+    from renew_curve.ui.dialogs import DataDialog
+
+    assert hasattr(DataDialog, "import_legacy_csv_button")
+    assert hasattr(DataDialog, "export_full_backup_button")
+    assert hasattr(DataDialog, "import_full_backup_button")
+
+
+def test_main_window_exposes_full_backup_actions():
+    from renew_curve.ui.main_window import MainWindow
+
+    assert hasattr(MainWindow, "_export_full_backup")
+    assert hasattr(MainWindow, "_import_full_backup")

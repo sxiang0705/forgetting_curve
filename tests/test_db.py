@@ -172,3 +172,59 @@ def test_repository_finds_and_snoozes_next_pending_reminder(tmp_path):
     assert snoozed is not None
     assert snoozed.id == next_id
     assert snoozed.remind_time == dt.datetime(2026, 5, 10, 10, 30)
+
+
+def test_repository_lists_due_reminders_for_date(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        task_id = repo.create_task(
+            TaskDraft(
+                title="英文單字 Unit 12",
+                category="英文單字",
+                difficulty="初級",
+                notes="完整備註",
+                reminder_method="遺忘曲線",
+                start_time=dt.datetime(2026, 5, 6, 9, 0),
+            )
+        )
+        due_id = repo.create_reminder(
+            ReminderDraft(task_id=task_id, remind_time=dt.datetime(2026, 5, 7, 9, 0))
+        )
+        repo.create_reminder(
+            ReminderDraft(task_id=task_id, remind_time=dt.datetime(2026, 5, 8, 9, 0))
+        )
+
+        items = repo.list_due_reminders_for_date(dt.date(2026, 5, 7))
+
+    assert [item.reminder_id for item in items] == [due_id]
+    assert items[0].task_title == "英文單字 Unit 12"
+    assert items[0].notes == "完整備註"
+    assert items[0].review_index == 1
+
+
+def test_repository_counts_reminders_by_date_and_categories(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        english_id = repo.create_task(
+            TaskDraft("單字", "英文單字", "初級", "", "遺忘曲線", dt.datetime(2026, 5, 6, 9, 0))
+        )
+        cs_id = repo.create_task(
+            TaskDraft("儲存單位", "計算機概論", "初級", "", "遺忘曲線", dt.datetime(2026, 5, 6, 10, 0))
+        )
+        repo.create_reminder(ReminderDraft(english_id, dt.datetime(2026, 5, 7, 9, 0)))
+        repo.create_reminder(ReminderDraft(cs_id, dt.datetime(2026, 5, 7, 10, 0)))
+        repo.create_reminder(ReminderDraft(cs_id, dt.datetime(2026, 5, 9, 10, 0)))
+
+        counts = repo.count_pending_reminders_by_date(dt.date(2026, 5, 7), 3)
+        categories = repo.list_categories()
+
+    assert counts == {
+        dt.date(2026, 5, 7): 2,
+        dt.date(2026, 5, 8): 0,
+        dt.date(2026, 5, 9): 1,
+    }
+    assert categories == ["英文單字", "計算機概論"]

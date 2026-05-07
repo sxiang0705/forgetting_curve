@@ -43,6 +43,29 @@ class Reminder:
 
 
 @dataclass(frozen=True)
+class ReminderItem:
+    reminder_id: int
+    task_id: int
+    task_title: str
+    category: str
+    difficulty: str
+    notes: str
+    remind_time: dt.datetime
+    review_index: int
+    total_reviews: int
+    progress_percent: float
+
+
+@dataclass(frozen=True)
+class ReportStats:
+    total_tasks: int
+    today_reminders: int
+    pending_reminders: int
+    completed_reminders: int
+    total_completion_percent: float
+
+
+@dataclass(frozen=True)
 class ImportSummary:
     tasks: int
     reminders: int

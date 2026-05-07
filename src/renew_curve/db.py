@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from renew_curve.models import Reminder, ReminderDraft, Task, TaskDraft
+from renew_curve.models import Reminder, ReminderDraft, ReminderItem, Task, TaskDraft
 from renew_curve.scheduler import calculate_progress_percent
 
 
@@ -205,6 +205,86 @@ class ReminderRepository:
             (task_id,),
         ).fetchone()
         return None if row is None else _reminder_from_row(row)
+
+    def list_due_reminders_for_date(self, day: dt.date) -> list[ReminderItem]:
+        start = dt.datetime.combine(day, dt.time.min)
+        end = start + dt.timedelta(days=1)
+        rows = self._conn.execute(
+            """
+            SELECT
+                reminders.id AS reminder_id,
+                reminders.task_id,
+                reminders.remind_time,
+                tasks.title,
+                tasks.category,
+                tasks.difficulty,
+                tasks.notes,
+                tasks.progress_percent,
+                (
+                    SELECT COUNT(*)
+                    FROM reminders AS earlier
+                    WHERE earlier.task_id = reminders.task_id
+                      AND earlier.remind_time <= reminders.remind_time
+                ) AS review_index,
+                (
+                    SELECT COUNT(*)
+                    FROM reminders AS all_reviews
+                    WHERE all_reviews.task_id = reminders.task_id
+                ) AS total_reviews
+            FROM reminders
+            JOIN tasks ON tasks.id = reminders.task_id
+            WHERE reminders.reminded = 0
+              AND reminders.remind_time >= ?
+              AND reminders.remind_time < ?
+            ORDER BY reminders.remind_time, reminders.id
+            """,
+            (_dump_datetime(start), _dump_datetime(end)),
+        )
+        return [
+            ReminderItem(
+                reminder_id=int(row["reminder_id"]),
+                task_id=int(row["task_id"]),
+                task_title=str(row["title"]),
+                category=str(row["category"]),
+                difficulty=str(row["difficulty"]),
+                notes=str(row["notes"]),
+                remind_time=_load_datetime(str(row["remind_time"])),
+                review_index=int(row["review_index"]),
+                total_reviews=int(row["total_reviews"]),
+                progress_percent=float(row["progress_percent"]),
+            )
+            for row in rows
+        ]
+
+    def count_pending_reminders_by_date(
+        self, start_day: dt.date, days: int
+    ) -> dict[dt.date, int]:
+        result = {start_day + dt.timedelta(days=offset): 0 for offset in range(days)}
+        start = dt.datetime.combine(start_day, dt.time.min)
+        end = start + dt.timedelta(days=days)
+        rows = self._conn.execute(
+            """
+            SELECT substr(remind_time, 1, 10) AS day_key, COUNT(*) AS count
+            FROM reminders
+            WHERE reminded = 0 AND remind_time >= ? AND remind_time < ?
+            GROUP BY day_key
+            """,
+            (_dump_datetime(start), _dump_datetime(end)),
+        )
+        for row in rows:
+            result[dt.date.fromisoformat(str(row["day_key"]))] = int(row["count"])
+        return result
+
+    def list_categories(self) -> list[str]:
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT category
+            FROM tasks
+            WHERE trim(category) != ''
+            ORDER BY category
+            """
+        )
+        return [str(row["category"]) for row in rows]
 
     def mark_reminder_done(self, reminder_id: int) -> None:
         row = self._conn.execute(

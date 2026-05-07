@@ -4,7 +4,7 @@ import datetime as dt
 from contextlib import closing
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -50,8 +51,9 @@ class MainWindow(QMainWindow):
             self._stylesheet_for_settings(self._load_personalization_settings())
         )
 
+        self._selected_day = dt.date.today()
         self._build_ui()
-        self.refresh_tasks()
+        self.refresh_dashboard()
 
     def close_database(self) -> None:
         pass
@@ -60,14 +62,49 @@ class MainWindow(QMainWindow):
         self.close_database()
         super().closeEvent(event)
 
+    def refresh_dashboard(self, selected_day: dt.date | None = None) -> None:
+        day = selected_day or self._selected_day
+        self._selected_day = day
+        self._load_day_reminders(day)
+        self._load_next_three_days(day)
+        self._load_all_tasks()
+        self._render_day_reminders(day)
+        self._render_next_three_days()
+        self._render_all_tasks()
+
     def refresh_tasks(self) -> None:
+        self.refresh_dashboard()
+
+    def _load_day_reminders(self, day: dt.date) -> None:
         with closing(connect(self.db_path)) as conn:
+            init_db(conn)
             repository = ReminderRepository(conn)
-            tasks = repository.list_tasks()
-            next_reminders = {
-                task.id: repository.next_pending_reminder(task.id) for task in tasks
+            self._current_day_items = repository.list_due_reminders_for_date(day)
+
+    def _load_next_three_days(self, start_day: dt.date) -> None:
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            self._next_three_days = {
+                start_day + dt.timedelta(days=offset): repository.list_due_reminders_for_date(
+                    start_day + dt.timedelta(days=offset)
+                )
+                for offset in range(1, 4)
             }
 
+    def _load_all_tasks(self) -> None:
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            self._all_tasks = repository.list_tasks()
+            self._all_next_reminders = {
+                task.id: repository.next_pending_reminder(task.id)
+                for task in self._all_tasks
+            }
+
+    def _render_all_tasks(self) -> None:
+        tasks = self._all_tasks
+        next_reminders = self._all_next_reminders
         self.task_table.setRowCount(len(tasks))
         self._row_task_ids: list[int] = []
         self._row_next_reminder_ids: list[int | None] = []
@@ -96,11 +133,126 @@ class MainWindow(QMainWindow):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.task_table.setItem(row_index, column_index, item)
 
-        self.total_tasks_value.setText(str(len(tasks)))
-        active_count = sum(not task.is_completed for task in tasks)
-        done_count = len(tasks) - active_count
-        self.active_tasks_value.setText(str(active_count))
-        self.completed_tasks_value.setText(str(done_count))
+    def _render_day_reminders(self, day: dt.date) -> None:
+        self.day_title_label.setText(
+            "今天任務" if day == dt.date.today() else day.strftime("%m/%d 任務")
+        )
+        self.selected_day_label.setText(day.strftime("%Y-%m-%d"))
+        self._clear_layout(self.today_tasks_layout)
+
+        if not self._current_day_items:
+            empty = QLabel("這一天沒有待複習任務。")
+            empty.setObjectName("Muted")
+            self.today_tasks_layout.addWidget(empty)
+        for item in self._current_day_items:
+            self.today_tasks_layout.addWidget(self._build_reminder_card(item))
+        self.today_tasks_layout.addStretch(1)
+
+    def _render_next_three_days(self) -> None:
+        self._clear_layout(self.next_three_days_layout)
+        for day, items in self._next_three_days.items():
+            row = QFrame()
+            row.setObjectName("Panel")
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(10, 8, 10, 8)
+            layout.setSpacing(8)
+            date_label = QLabel(day.strftime("%m/%d"))
+            date_label.setFixedWidth(44)
+            layout.addWidget(date_label)
+            names = "、".join(item.task_title for item in items[:3])
+            if len(items) > 3:
+                names += f" 等 {len(items)} 筆"
+            summary = QLabel(names or "無任務")
+            summary.setWordWrap(True)
+            layout.addWidget(summary, 1)
+            count = QLabel(str(len(items)))
+            count.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            count.setFixedWidth(28)
+            layout.addWidget(count)
+            self.next_three_days_layout.addWidget(row)
+        self.next_three_days_layout.addStretch(1)
+
+    def _build_reminder_card(self, item) -> QFrame:
+        card = QFrame()
+        card.setObjectName("Panel")
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(12)
+
+        content = QVBoxLayout()
+        title = QLabel(item.task_title)
+        title.setStyleSheet("font-size: 17px; font-weight: 700;")
+        meta = QLabel(
+            f"{item.category}  {item.remind_time.strftime('%H:%M')}  "
+            f"第 {item.review_index} 次複習"
+        )
+        meta.setObjectName("Muted")
+        notes = QLabel(f"備註：{item.notes}" if item.notes else "備註：無")
+        notes.setWordWrap(True)
+        content.addWidget(title)
+        content.addWidget(meta)
+        content.addWidget(notes)
+        layout.addLayout(content, 1)
+
+        complete_button = QPushButton("完成")
+        complete_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        complete_button.clicked.connect(
+            lambda _checked=False, reminder_id=item.reminder_id: self._complete_reminder(
+                reminder_id
+            )
+        )
+        snooze_button = QPushButton("推延")
+        snooze_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        snooze_button.clicked.connect(
+            lambda _checked=False, reminder_id=item.reminder_id: self._snooze_reminder(
+                reminder_id
+            )
+        )
+        layout.addWidget(complete_button)
+        layout.addWidget(snooze_button)
+        return card
+
+    def _clear_layout(self, layout: QVBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def _on_calendar_selected(self) -> None:
+        qdate = self.calendar.selectedDate()
+        self.refresh_dashboard(dt.date(qdate.year(), qdate.month(), qdate.day()))
+
+    def _return_to_today(self) -> None:
+        today = dt.date.today()
+        self.calendar.setSelectedDate(QDate(today.year, today.month, today.day))
+        self.refresh_dashboard(today)
+
+    def _complete_reminder(self, reminder_id: int) -> None:
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            with conn:
+                repository.mark_reminder_done(reminder_id)
+        self.refresh_dashboard()
+
+    def _snooze_reminder(self, reminder_id: int) -> None:
+        settings = self._load_personalization_settings()
+        choice = settings.get("default_snooze", "10m")
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            row = conn.execute(
+                "SELECT remind_time FROM reminders WHERE id = ?",
+                (reminder_id,),
+            ).fetchone()
+            if row is None:
+                return
+            current_time = dt.datetime.fromisoformat(str(row["remind_time"]))
+            new_time = snooze_until(current_time, choice)
+            repository = ReminderRepository(conn)
+            with conn:
+                repository.snooze_reminder_group(reminder_id, new_time - current_time)
+        self.refresh_dashboard()
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -110,19 +262,19 @@ class MainWindow(QMainWindow):
 
         root_layout.addWidget(self._build_sidebar())
         root_layout.addWidget(self._build_center(), 1)
-        root_layout.addWidget(self._build_right_panel())
 
         self.setCentralWidget(root)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(180)
+        sidebar.setFixedWidth(300)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 18, 16, 18)
-        layout.setSpacing(10)
+        layout.setSpacing(14)
 
+        brand_row = QHBoxLayout()
         logo = QLabel("FC")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setFixedSize(44, 44)
@@ -130,29 +282,34 @@ class MainWindow(QMainWindow):
             "font-size: 20px; font-weight: 700; border-radius: 8px;"
             "background: #2563eb; color: white;"
         )
-        layout.addWidget(logo, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addSpacing(12)
+        brand = QLabel("Renew Curve v8")
+        brand.setStyleSheet("font-size: 18px; font-weight: 700;")
+        brand_row.addWidget(logo)
+        brand_row.addWidget(brand, 1)
+        layout.addLayout(brand_row)
 
-        for label in ("任務", "日曆"):
-            button = QPushButton(label)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            layout.addWidget(button)
+        calendar_frame = QFrame()
+        calendar_frame.setObjectName("Panel")
+        calendar_layout = QVBoxLayout(calendar_frame)
+        calendar_layout.setContentsMargins(10, 10, 10, 10)
+        self.calendar = QCalendarWidget()
+        self.calendar.selectionChanged.connect(self._on_calendar_selected)
+        calendar_layout.addWidget(self.calendar)
+        self.today_button = QPushButton("回到今天")
+        self.today_button.clicked.connect(self._return_to_today)
+        calendar_layout.addWidget(self.today_button)
+        layout.addWidget(calendar_frame)
 
-        self.import_export_button = QPushButton("匯入/匯出")
-        self.import_export_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.import_export_button.clicked.connect(self.open_import_export_dialog)
-        layout.addWidget(self.import_export_button)
-
-        self.settings_button = QPushButton("個人化")
-        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.settings_button.clicked.connect(self.open_settings_dialog)
-        layout.addWidget(self.settings_button)
-
-        layout.addStretch(1)
-
-        dnd_button = QPushButton("勿擾關閉")
-        dnd_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout.addWidget(dnd_button)
+        next_frame = QFrame()
+        next_frame.setObjectName("Panel")
+        next_layout = QVBoxLayout(next_frame)
+        next_layout.setContentsMargins(12, 12, 12, 12)
+        next_title = QLabel("接下來 3 天")
+        next_title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        next_layout.addWidget(next_title)
+        self.next_three_days_layout = QVBoxLayout()
+        next_layout.addLayout(self.next_three_days_layout)
+        layout.addWidget(next_frame, 1)
 
         return sidebar
 
@@ -163,44 +320,62 @@ class MainWindow(QMainWindow):
         layout.setSpacing(18)
 
         header = QHBoxLayout()
-        title = QLabel("複習計畫")
-        title.setStyleSheet("font-size: 28px; font-weight: 700;")
-        header.addWidget(title)
+        self.day_title_label = QLabel("今天任務")
+        self.day_title_label.setStyleSheet("font-size: 28px; font-weight: 700;")
+        header.addWidget(self.day_title_label)
         header.addStretch(1)
 
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("搜尋任務")
-        self.search_input.setFixedWidth(260)
-        header.addWidget(self.search_input)
+        self.import_export_button = QPushButton("匯入/匯出")
+        self.import_export_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_export_button.clicked.connect(self.open_import_export_dialog)
+        header.addWidget(self.import_export_button)
+
+        self.settings_button = QPushButton("個人化")
+        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_button.clicked.connect(self.open_settings_dialog)
+        header.addWidget(self.settings_button)
 
         self.new_task_button = QPushButton("新增任務")
         self.new_task_button.setObjectName("PrimaryButton")
         self.new_task_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.new_task_button.clicked.connect(self.open_task_dialog)
         header.addWidget(self.new_task_button)
+        layout.addLayout(header)
 
+        self.selected_day_label = QLabel("")
+        self.selected_day_label.setObjectName("Muted")
+        layout.addWidget(self.selected_day_label)
+
+        # Compatibility buttons for existing keyboard/test paths; visible task cards
+        # now carry the primary completion and snooze actions.
         self.complete_next_button = QPushButton("完成下一次")
         self.complete_next_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.complete_next_button.clicked.connect(self.complete_selected_next_reminder)
-        header.addWidget(self.complete_next_button)
+        self.complete_next_button.hide()
 
         self.snooze_next_button = QPushButton("稍後提醒")
         self.snooze_next_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.snooze_next_button.clicked.connect(self.snooze_selected_next_reminder)
-        header.addWidget(self.snooze_next_button)
-        layout.addLayout(header)
+        self.snooze_next_button.hide()
 
-        stats = QHBoxLayout()
-        stats.setSpacing(12)
-        self.total_tasks_value = QLabel("0")
-        self.active_tasks_value = QLabel("0")
-        self.completed_tasks_value = QLabel("0")
-        stats.addWidget(self._build_stat_card("總數", self.total_tasks_value))
-        stats.addWidget(self._build_stat_card("進行中", self.active_tasks_value))
-        stats.addWidget(self._build_stat_card("已完成", self.completed_tasks_value))
-        layout.addLayout(stats)
+        self.today_tasks_container = QWidget()
+        self.today_tasks_container.setObjectName("TodayTasks")
+        self.today_tasks_layout = QVBoxLayout(self.today_tasks_container)
+        self.today_tasks_layout.setContentsMargins(0, 0, 0, 0)
+        self.today_tasks_layout.setSpacing(10)
+        today_scroll = QScrollArea()
+        today_scroll.setWidgetResizable(True)
+        today_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        today_scroll.setWidget(self.today_tasks_container)
+        today_scroll.setMinimumHeight(230)
+        layout.addWidget(today_scroll)
+
+        all_title = QLabel("所有任務")
+        all_title.setStyleSheet("font-size: 20px; font-weight: 700;")
+        layout.addWidget(all_title)
 
         self.task_table = QTableWidget(0, 5)
+        self.task_table.setObjectName("AllTasks")
         self.task_table.setHorizontalHeaderLabels(
             ["任務", "分類", "下一次", "進度", "狀態"]
         )
@@ -215,6 +390,7 @@ class MainWindow(QMainWindow):
             self.task_table.horizontalHeader().setSectionResizeMode(
                 column, QHeaderView.ResizeToContents
             )
+        self.task_table.setMinimumHeight(220)
         layout.addWidget(self.task_table, 1)
 
         return center

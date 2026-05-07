@@ -40,3 +40,12 @@ def test_main_window_exposes_full_backup_actions():
 
     assert hasattr(MainWindow, "_export_full_backup")
     assert hasattr(MainWindow, "_import_full_backup")
+
+
+def test_main_window_exposes_new_dashboard_refresh_methods():
+    from renew_curve.ui.main_window import MainWindow
+
+    assert hasattr(MainWindow, "refresh_dashboard")
+    assert hasattr(MainWindow, "_load_day_reminders")
+    assert hasattr(MainWindow, "_load_next_three_days")
+    assert hasattr(MainWindow, "_load_all_tasks")

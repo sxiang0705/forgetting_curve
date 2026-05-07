@@ -45,11 +45,51 @@ class SettingsDialog(QDialog):
         self.snooze_combo.addItems(["10m", "1h", "tomorrow"])
         self._set_current(self.snooze_combo, current.get("default_snooze", "10m"))
 
+        self.theme_style_combo = QComboBox()
+        self.theme_style_combo.addItems(["clean_mountain", "healing_pastel", "dark_focus"])
+        self._set_current(
+            self.theme_style_combo, current.get("theme_style", "clean_mountain")
+        )
+
+        self.sticker_scope_combo = QComboBox()
+        self.sticker_scope_combo.addItems(["main_only", "all_windows", "disabled"])
+        self._set_current(
+            self.sticker_scope_combo, current.get("sticker_scope", "main_only")
+        )
+
+        self.functional_sticker_density_combo = QComboBox()
+        self.functional_sticker_density_combo.addItems(["low", "normal", "high"])
+        self._set_current(
+            self.functional_sticker_density_combo,
+            current.get("functional_window_sticker_density", "low"),
+        )
+
+        self.background_overlay_spin = QSpinBox()
+        self.background_overlay_spin.setRange(0, 100)
+        self.background_overlay_spin.setValue(int(current.get("background_overlay", "60")))
+
+        self.background_blur_spin = QSpinBox()
+        self.background_blur_spin.setRange(0, 30)
+        self.background_blur_spin.setValue(int(current.get("background_blur", "0")))
+
+        self.background_darken_spin = QSpinBox()
+        self.background_darken_spin.setRange(0, 100)
+        self.background_darken_spin.setValue(int(current.get("background_darken", "20")))
+
+        self.background_assets: list[tuple[int, str, str, bool]] = []
+        self.sticker_assets: list[tuple[int, str, str, bool]] = []
+
         form = QFormLayout()
         form.addRow("主題", self.theme_combo)
         form.addRow("重點色", self.accent_combo)
         form.addRow("介面密度", self.density_combo)
         form.addRow("預設稍後提醒", self.snooze_combo)
+        form.addRow("介面風格", self.theme_style_combo)
+        form.addRow("貼圖顯示範圍", self.sticker_scope_combo)
+        form.addRow("功能視窗貼圖密度", self.functional_sticker_density_combo)
+        form.addRow("背景透明遮罩", self.background_overlay_spin)
+        form.addRow("背景模糊", self.background_blur_spin)
+        form.addRow("背景暗化", self.background_darken_spin)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -68,7 +108,19 @@ class SettingsDialog(QDialog):
             "accent": self.accent_combo.currentText(),
             "density": self.density_combo.currentText(),
             "default_snooze": self.snooze_combo.currentText(),
+            "theme_style": self.theme_style_combo.currentText(),
+            "sticker_scope": self.sticker_scope_combo.currentText(),
+            "functional_window_sticker_density": self.functional_sticker_density_combo.currentText(),
+            "background_overlay": str(self.background_overlay_spin.value()),
+            "background_blur": str(self.background_blur_spin.value()),
+            "background_darken": str(self.background_darken_spin.value()),
         }
+
+    def set_background_assets(self, assets: list[tuple[int, str, str, bool]]) -> None:
+        self.background_assets = assets
+
+    def set_sticker_assets(self, assets: list[tuple[int, str, str, bool]]) -> None:
+        self.sticker_assets = assets
 
     @staticmethod
     def _set_current(combo: QComboBox, value: str) -> None:

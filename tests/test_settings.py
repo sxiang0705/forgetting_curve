@@ -67,3 +67,22 @@ def test_personalization_stylesheet_uses_theme_style():
 
     assert "#2563eb" in css
     assert "QFrame#Panel" in css
+
+
+def test_init_db_creates_stickers_table(tmp_path):
+    db_path = tmp_path / "settings.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        names = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    assert "stickers" in names
+
+
+def test_settings_dialog_exposes_theme_and_asset_sections():
+    from renew_curve.ui.dialogs import SettingsDialog
+
+    assert hasattr(SettingsDialog, "values")
+    assert hasattr(SettingsDialog, "set_background_assets")
+    assert hasattr(SettingsDialog, "set_sticker_assets")

@@ -62,6 +62,13 @@ def init_db(conn: sqlite3.Connection) -> None:
             is_active INTEGER NOT NULL DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS stickers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            path TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 0
+        );
+
         CREATE INDEX IF NOT EXISTS idx_tasks_legacy_id ON tasks (legacy_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_is_completed ON tasks (is_completed);
         CREATE INDEX IF NOT EXISTS idx_reminders_task_id ON reminders (task_id);

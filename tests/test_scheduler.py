@@ -7,6 +7,7 @@ from renew_curve.scheduler import (
     forgetting_curve_days,
     generated_review_times,
     snooze_until,
+    validate_manual_review_times,
 )
 
 
@@ -42,3 +43,34 @@ def test_snooze_until_supports_expected_choices():
     assert snooze_until(now, "10m") == dt.datetime(2026, 5, 6, 9, 10)
     assert snooze_until(now, "1h") == dt.datetime(2026, 5, 6, 10, 0)
     assert snooze_until(now, "tomorrow") == dt.datetime(2026, 5, 7, 9, 0)
+
+
+def test_validate_manual_review_times_requires_matching_count():
+    with pytest.raises(ValueError, match="expected 3 review times"):
+        validate_manual_review_times(
+            [dt.datetime(2026, 5, 8, 9, 0)],
+            review_count=3,
+        )
+
+
+def test_validate_manual_review_times_sorts_and_rejects_duplicates():
+    values = validate_manual_review_times(
+        [
+            dt.datetime(2026, 5, 10, 9, 0),
+            dt.datetime(2026, 5, 8, 9, 0),
+        ],
+        review_count=2,
+    )
+    assert values == [
+        dt.datetime(2026, 5, 8, 9, 0),
+        dt.datetime(2026, 5, 10, 9, 0),
+    ]
+
+    with pytest.raises(ValueError, match="duplicate review time"):
+        validate_manual_review_times(
+            [
+                dt.datetime(2026, 5, 8, 9, 0),
+                dt.datetime(2026, 5, 8, 9, 0),
+            ],
+            review_count=2,
+        )

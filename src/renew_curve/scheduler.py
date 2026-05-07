@@ -25,6 +25,18 @@ def generated_review_times(start: dt.datetime, review_count: int) -> list[dt.dat
     return [start + dt.timedelta(days=days) for days in forgetting_curve_days(review_count)]
 
 
+def validate_manual_review_times(
+    values: list[dt.datetime], review_count: int
+) -> list[dt.datetime]:
+    if len(values) != review_count:
+        raise ValueError(f"expected {review_count} review times")
+
+    sorted_values = sorted(values)
+    if len(set(sorted_values)) != len(sorted_values):
+        raise ValueError("duplicate review time")
+    return sorted_values
+
+
 def calculate_progress_percent(total: int, completed: int) -> float:
     if total <= 0:
         return 0.0

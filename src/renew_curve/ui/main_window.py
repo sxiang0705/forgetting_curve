@@ -30,7 +30,10 @@ from renew_curve.db import ReminderRepository, connect, init_db
 from renew_curve.models import ReminderDraft, Task, TaskDraft
 from renew_curve.scheduler import generated_review_times, snooze_until
 from renew_curve.ui.dialogs import ImportExportDialog, SettingsDialog, TaskDialog
-from renew_curve.ui.theme import build_stylesheet
+from renew_curve.ui.personalization import (
+    default_personalization_settings,
+    stylesheet_for_personalization,
+)
 
 
 class MainWindow(QMainWindow):
@@ -389,12 +392,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(self._stylesheet_for_settings(values))
 
     def _load_personalization_settings(self) -> dict[str, str]:
-        defaults = {
-            "theme": "light",
-            "accent": "blue",
-            "density": "comfortable",
-            "default_snooze": "10m",
-        }
+        defaults = default_personalization_settings()
         with closing(connect(self.db_path)) as conn:
             init_db(conn)
             repository = ReminderRepository(conn)
@@ -405,11 +403,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _stylesheet_for_settings(settings: dict[str, str]) -> str:
-        return build_stylesheet(
-            accent=settings.get("accent", "blue"),
-            dark=settings.get("theme") == "dark",
-            compact=settings.get("density") == "compact",
-        )
+        return stylesheet_for_personalization(settings)
 
     def _import_csv(self, dialog: ImportExportDialog, mode: str) -> None:
         path = dialog.choose_csv_open()

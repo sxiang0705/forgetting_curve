@@ -42,3 +42,28 @@ def test_setting_rolls_back_with_outer_transaction(tmp_path):
 
         assert repo.list_tasks() == []
         assert repo.get_setting("theme", "light") == "light"
+
+
+def test_personalization_defaults_include_global_scope():
+    from renew_curve.ui.personalization import default_personalization_settings
+
+    defaults = default_personalization_settings()
+
+    assert defaults["theme_style"] == "clean_mountain"
+    assert defaults["sticker_scope"] == "main_only"
+    assert defaults["functional_window_sticker_density"] == "low"
+
+
+def test_personalization_stylesheet_uses_theme_style():
+    from renew_curve.ui.personalization import stylesheet_for_personalization
+
+    css = stylesheet_for_personalization(
+        {
+            "theme_style": "healing_pastel",
+            "density": "comfortable",
+            "accent": "blue",
+        }
+    )
+
+    assert "#2563eb" in css
+    assert "QFrame#Panel" in css

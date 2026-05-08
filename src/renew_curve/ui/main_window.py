@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import datetime as dt
+import calendar as calendar_lib
 from contextlib import closing
 from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QCalendarWidget,
     QDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -36,6 +37,134 @@ from renew_curve.ui.personalization import (
     default_personalization_settings,
     stylesheet_for_personalization,
 )
+
+
+class MockupCalendar(QFrame):
+    daySelected = Signal(dt.date)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("CalendarPanel")
+        self._selected_day = dt.date.today()
+        self._visible_month = dt.date(self._selected_day.year, self._selected_day.month, 1)
+        self._counts: dict[dt.date, int] = {}
+        self._day_buttons: dict[dt.date, QPushButton] = {}
+        self._build_ui()
+        self._render()
+
+    def set_selected_date(self, day: dt.date) -> None:
+        self._selected_day = day
+        self._visible_month = dt.date(day.year, day.month, 1)
+        self._render()
+
+    def selected_date(self) -> dt.date:
+        return self._selected_day
+
+    def set_counts(self, counts: dict[dt.date, int]) -> None:
+        self._counts = counts
+        self._render()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        self.prev_month_button = QPushButton("‹")
+        self.prev_month_button.setObjectName("IconButton")
+        self.prev_month_button.setFixedWidth(34)
+        self.prev_month_button.clicked.connect(self._previous_month)
+        header.addWidget(self.prev_month_button)
+
+        self.calendar_month_label = QLabel("")
+        self.calendar_month_label.setStyleSheet("font-size: 18px; font-weight: 800;")
+        header.addWidget(self.calendar_month_label, 1)
+
+        self.next_month_button = QPushButton("›")
+        self.next_month_button.setObjectName("IconButton")
+        self.next_month_button.setFixedWidth(34)
+        self.next_month_button.clicked.connect(self._next_month)
+        header.addWidget(self.next_month_button)
+
+        layout.addLayout(header)
+
+        self.grid = QGridLayout()
+        self.grid.setSpacing(7)
+        for column, name in enumerate(["日", "一", "二", "三", "四", "五", "六"]):
+            label = QLabel(name)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setObjectName("Muted")
+            self.grid.addWidget(label, 0, column)
+        layout.addLayout(self.grid)
+
+        legend = QLabel("1-2 綠 / 3-4 黃 / 5-6 橘 / 7+ 紅")
+        legend.setObjectName("Muted")
+        layout.addWidget(legend)
+
+    def _render(self) -> None:
+        for button in self._day_buttons.values():
+            button.deleteLater()
+        self._day_buttons = {}
+        self.calendar_month_label.setText(
+            f"{self._visible_month.year} 年 {self._visible_month.month} 月"
+        )
+
+        weeks = calendar_lib.Calendar(firstweekday=6).monthdatescalendar(
+            self._visible_month.year, self._visible_month.month
+        )
+        for row_index, week in enumerate(weeks, start=1):
+            for column, day in enumerate(week):
+                count = self._counts.get(day, 0)
+                text = str(day.day) if count == 0 else f"{day.day}\n{count}"
+                button = QPushButton(text)
+                button.setObjectName(self._day_object_name(day, count))
+                button.setFixedHeight(48)
+                button.setCursor(Qt.CursorShape.PointingHandCursor)
+                button.clicked.connect(
+                    lambda _checked=False, selected=day: self._select_day(selected)
+                )
+                self.grid.addWidget(button, row_index, column)
+                self._day_buttons[day] = button
+
+    def _day_object_name(self, day: dt.date, count: int) -> str:
+        if day == self._selected_day:
+            return "CalendarDaySelected"
+        if day.month != self._visible_month.month:
+            return "CalendarDayMuted"
+        if count >= 7:
+            return "CalendarDayLoad4"
+        if count >= 5:
+            return "CalendarDayLoad3"
+        if count >= 3:
+            return "CalendarDayLoad2"
+        if count >= 1:
+            return "CalendarDayLoad1"
+        return "CalendarDay"
+
+    def _select_day(self, day: dt.date) -> None:
+        self._selected_day = day
+        if day.month != self._visible_month.month:
+            self._visible_month = dt.date(day.year, day.month, 1)
+        self._render()
+        self.daySelected.emit(day)
+
+    def _previous_month(self) -> None:
+        year = self._visible_month.year
+        month = self._visible_month.month - 1
+        if month == 0:
+            year -= 1
+            month = 12
+        self._visible_month = dt.date(year, month, 1)
+        self._render()
+
+    def _next_month(self) -> None:
+        year = self._visible_month.year
+        month = self._visible_month.month + 1
+        if month == 13:
+            year += 1
+            month = 1
+        self._visible_month = dt.date(year, month, 1)
+        self._render()
 
 
 class MainWindow(QMainWindow):
@@ -66,9 +195,12 @@ class MainWindow(QMainWindow):
     def refresh_dashboard(self, selected_day: dt.date | None = None) -> None:
         day = selected_day or self._selected_day
         self._selected_day = day
+        self._load_calendar_counts(day)
         self._load_day_reminders(day)
         self._load_next_three_days(day)
         self._load_all_tasks()
+        self.calendar.set_selected_date(day)
+        self.calendar.set_counts(self._calendar_counts)
         self._render_day_reminders(day)
         self._render_next_three_days()
         self._render_all_tasks()
@@ -81,6 +213,16 @@ class MainWindow(QMainWindow):
             init_db(conn)
             repository = ReminderRepository(conn)
             self._current_day_items = repository.list_due_reminders_for_date(day)
+
+    def _load_calendar_counts(self, day: dt.date) -> None:
+        month_start = dt.date(day.year, day.month, 1)
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            self._calendar_counts = repository.count_pending_reminders_by_date(
+                month_start - dt.timedelta(days=7),
+                49,
+            )
 
     def _load_next_three_days(self, start_day: dt.date) -> None:
         with closing(connect(self.db_path)) as conn:
@@ -274,12 +416,10 @@ class MainWindow(QMainWindow):
                 widget.deleteLater()
 
     def _on_calendar_selected(self) -> None:
-        qdate = self.calendar.selectedDate()
-        self.refresh_dashboard(dt.date(qdate.year(), qdate.month(), qdate.day()))
+        self.refresh_dashboard(self.calendar.selected_date())
 
     def _return_to_today(self) -> None:
         today = dt.date.today()
-        self.calendar.setSelectedDate(QDate(today.year, today.month, today.day))
         self.refresh_dashboard(today)
 
     def _complete_reminder(self, reminder_id: int) -> None:
@@ -345,13 +485,14 @@ class MainWindow(QMainWindow):
         calendar_frame = QFrame()
         calendar_frame.setObjectName("Panel")
         calendar_layout = QVBoxLayout(calendar_frame)
-        calendar_layout.setContentsMargins(10, 10, 10, 10)
-        self.calendar = QCalendarWidget()
-        self.calendar.selectionChanged.connect(self._on_calendar_selected)
+        calendar_layout.setContentsMargins(0, 0, 0, 0)
+        self.calendar = MockupCalendar()
+        self.calendar_month_label = self.calendar.calendar_month_label
+        self.calendar.daySelected.connect(lambda _day: self._on_calendar_selected())
         calendar_layout.addWidget(self.calendar)
-        self.today_button = QPushButton("回到今天")
-        self.today_button.clicked.connect(self._return_to_today)
-        calendar_layout.addWidget(self.today_button)
+        self.calendar_today_button = QPushButton("回到今天")
+        self.calendar_today_button.clicked.connect(self._return_to_today)
+        calendar_layout.addWidget(self.calendar_today_button)
         layout.addWidget(calendar_frame)
 
         next_frame = QFrame()
@@ -374,13 +515,14 @@ class MainWindow(QMainWindow):
 
     def _build_center(self) -> QWidget:
         center = QWidget()
-        layout = QVBoxLayout(center)
-        layout.setContentsMargins(28, 24, 24, 24)
-        layout.setSpacing(18)
+        self.center_layout = QVBoxLayout(center)
+        layout = self.center_layout
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(10)
 
         header = QHBoxLayout()
         self.day_title_label = QLabel("今天任務")
-        self.day_title_label.setStyleSheet("font-size: 28px; font-weight: 700;")
+        self.day_title_label.setStyleSheet("font-size: 27px; font-weight: 800;")
         header.addWidget(self.day_title_label)
         header.addStretch(1)
 
@@ -431,13 +573,18 @@ class MainWindow(QMainWindow):
         self.today_scroll.setWidgetResizable(True)
         self.today_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.today_scroll.setWidget(self.today_tasks_container)
-        self.today_scroll.setMinimumHeight(260)
-        self.today_scroll.setMaximumHeight(370)
+        self.today_scroll.setMinimumHeight(310)
+        self.today_scroll.setMaximumHeight(390)
         layout.addWidget(self.today_scroll)
 
+        all_header = QHBoxLayout()
         all_title = QLabel("所有任務")
-        all_title.setStyleSheet("font-size: 20px; font-weight: 700;")
-        layout.addWidget(all_title)
+        all_title.setStyleSheet("font-size: 20px; font-weight: 800;")
+        all_header.addWidget(all_title, 1)
+        all_note = QLabel("任務很多時此區塊內部捲動")
+        all_note.setObjectName("Muted")
+        all_header.addWidget(all_note)
+        layout.addLayout(all_header)
 
         self.category_chips_layout = QHBoxLayout()
         self.category_chips_layout.setSpacing(8)

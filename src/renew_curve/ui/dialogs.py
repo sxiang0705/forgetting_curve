@@ -30,6 +30,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None, current: dict[str, str] | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("個人化")
+        self.resize(960, 560)
         current = current or {}
 
         self.theme_combo = QComboBox()
@@ -82,28 +83,108 @@ class SettingsDialog(QDialog):
         self.background_assets: list[tuple[int, str, str, bool]] = []
         self.sticker_assets: list[tuple[int, str, str, bool]] = []
 
-        form = QFormLayout()
-        form.addRow("主題", self.theme_combo)
-        form.addRow("重點色", self.accent_combo)
-        form.addRow("介面密度", self.density_combo)
-        form.addRow("預設稍後提醒", self.snooze_combo)
-        form.addRow("介面風格", self.theme_style_combo)
-        form.addRow("貼圖顯示範圍", self.sticker_scope_combo)
-        form.addRow("功能視窗貼圖密度", self.functional_sticker_density_combo)
-        form.addRow("背景透明遮罩", self.background_overlay_spin)
-        form.addRow("背景模糊", self.background_blur_spin)
-        form.addRow("背景暗化", self.background_darken_spin)
+        self.interface_section_title = QLabel("介面風格")
+        self.interface_section_title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        interface_form = QFormLayout()
+        interface_form.addRow("主題", self.theme_combo)
+        interface_form.addRow("重點色", self.accent_combo)
+        interface_form.addRow("介面密度", self.density_combo)
+        interface_form.addRow("預設推延", self.snooze_combo)
+        interface_form.addRow("主題模式", self.theme_style_combo)
+        interface_form.addRow("貼圖顯示範圍", self.sticker_scope_combo)
+        interface_form.addRow("功能視窗貼圖密度", self.functional_sticker_density_combo)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        interface_panel = QFrame()
+        interface_panel.setObjectName("Panel")
+        interface_layout = QVBoxLayout(interface_panel)
+        interface_layout.addWidget(self.interface_section_title)
+        interface_layout.addLayout(interface_form)
+
+        self.assets_section_title = QLabel("我的素材")
+        self.assets_section_title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        asset_panel = QFrame()
+        asset_panel.setObjectName("Panel")
+        asset_layout = QVBoxLayout(asset_panel)
+        asset_layout.addWidget(self.assets_section_title)
+
+        self.upload_background_button = QPushButton("上傳背景圖片")
+        self.upload_sticker_button = QPushButton("上傳貼圖 PNG / GIF")
+        asset_layout.addWidget(self.upload_background_button)
+        asset_layout.addWidget(self.upload_sticker_button)
+
+        sliders = QFormLayout()
+        sliders.addRow("背景透明遮罩", self.background_overlay_spin)
+        sliders.addRow("背景模糊", self.background_blur_spin)
+        sliders.addRow("背景暗化", self.background_darken_spin)
+        asset_layout.addLayout(sliders)
+
+        self.background_list = QVBoxLayout()
+        self.sticker_list = QVBoxLayout()
+        lists = QWidget()
+        lists_layout = QVBoxLayout(lists)
+        lists_layout.setContentsMargins(0, 0, 0, 0)
+        lists_layout.addWidget(QLabel("背景圖片"))
+        lists_layout.addLayout(self.background_list)
+        lists_layout.addWidget(QLabel("小貼圖"))
+        lists_layout.addLayout(self.sticker_list)
+        self.asset_scroll = QScrollArea()
+        self.asset_scroll.setWidgetResizable(True)
+        self.asset_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.asset_scroll.setWidget(lists)
+        self.asset_scroll.setMinimumHeight(170)
+        asset_layout.addWidget(self.asset_scroll)
+
+        left_content = QWidget()
+        left_layout = QVBoxLayout(left_content)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(14)
+        left_layout.addWidget(interface_panel)
+        left_layout.addWidget(asset_panel, 1)
+
+        self.preview_title = QLabel("預覽")
+        self.preview_title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        preview_panel = QFrame()
+        preview_panel.setObjectName("PersonalizationPreview")
+        preview_layout = QVBoxLayout(preview_panel)
+        preview_layout.addWidget(self.preview_title)
+        preview_layout.addWidget(QLabel("今天任務"))
+        preview_task = QFrame()
+        preview_task.setObjectName("Panel")
+        preview_task_layout = QVBoxLayout(preview_task)
+        preview_task_layout.addWidget(QLabel("英文單字 Unit 12"))
+        note = QLabel("背景、主題色與貼圖會套用在正式畫面與功能視窗。")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        preview_task_layout.addWidget(note)
+        preview_layout.addWidget(preview_task)
+        preview_layout.addStretch(1)
+
+        header = QHBoxLayout()
+        title = QLabel("個人化")
+        title.setStyleSheet("font-size: 24px; font-weight: 800;")
+        header.addWidget(title, 1)
+        self.close_button = QPushButton("×")
+        self.close_button.setFixedSize(36, 36)
+        self.close_button.clicked.connect(self.reject)
+        header.addWidget(self.close_button)
+
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        body.addWidget(left_content, 1)
+        body.addWidget(preview_panel, 2)
+
+        self.apply_button = QPushButton("套用設定")
+        self.apply_button.setObjectName("PrimaryButton")
+        self.apply_button.clicked.connect(self.accept)
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        footer.addWidget(self.apply_button)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+        layout.addLayout(header)
+        layout.addLayout(body, 1)
+        layout.addLayout(footer)
+        self._render_asset_lists()
 
     def values(self) -> dict[str, str]:
         return {
@@ -121,9 +202,44 @@ class SettingsDialog(QDialog):
 
     def set_background_assets(self, assets: list[tuple[int, str, str, bool]]) -> None:
         self.background_assets = assets
+        self._render_asset_lists()
 
     def set_sticker_assets(self, assets: list[tuple[int, str, str, bool]]) -> None:
         self.sticker_assets = assets
+        self._render_asset_lists()
+
+    def _render_asset_lists(self) -> None:
+        if not hasattr(self, "background_list"):
+            return
+        self._fill_asset_list(self.background_list, self.background_assets, "尚未上傳背景")
+        self._fill_asset_list(self.sticker_list, self.sticker_assets, "尚未上傳貼圖")
+
+    def _fill_asset_list(
+        self,
+        layout: QVBoxLayout,
+        assets: list[tuple[int, str, str, bool]],
+        empty_text: str,
+    ) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        if not assets:
+            empty = QLabel(empty_text)
+            empty.setObjectName("Muted")
+            layout.addWidget(empty)
+            return
+        for _asset_id, name, _path, active in assets:
+            row = QFrame()
+            row.setObjectName("AssetRow")
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(8, 6, 8, 6)
+            row_layout.addWidget(QLabel(name), 1)
+            state = QLabel("使用中" if active else "未使用")
+            state.setObjectName("Muted")
+            row_layout.addWidget(state)
+            layout.addWidget(row)
 
     @staticmethod
     def _set_current(combo: QComboBox, value: str) -> None:

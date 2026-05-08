@@ -86,3 +86,24 @@ def test_settings_dialog_exposes_theme_and_asset_sections():
     assert hasattr(SettingsDialog, "values")
     assert hasattr(SettingsDialog, "set_background_assets")
     assert hasattr(SettingsDialog, "set_sticker_assets")
+
+
+def test_settings_dialog_uses_personalization_sections(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.dialogs import SettingsDialog
+
+    app = QApplication.instance() or QApplication([])
+    dialog = SettingsDialog()
+
+    assert dialog.interface_section_title.text() == "介面風格"
+    assert dialog.assets_section_title.text() == "我的素材"
+    assert dialog.preview_title.text() == "預覽"
+    assert dialog.asset_scroll.widgetResizable() is True
+    assert dialog.apply_button.text() == "套用設定"
+    assert dialog.close_button.text() == "×"
+
+    dialog.close()
+    app.processEvents()

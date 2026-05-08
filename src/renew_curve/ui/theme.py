@@ -100,11 +100,90 @@ QPushButton#ChipButtonActive {{
     font-weight: 800;
 }}
 
+QPushButton#IconButton {{
+    padding: 7px 0;
+    font-size: 18px;
+    font-weight: 800;
+}}
+
+QFrame#CalendarPanel {{
+    background: transparent;
+    border: 0;
+}}
+
+QPushButton#CalendarDay,
+QPushButton#CalendarDayMuted,
+QPushButton#CalendarDayLoad1,
+QPushButton#CalendarDayLoad2,
+QPushButton#CalendarDayLoad3,
+QPushButton#CalendarDayLoad4,
+QPushButton#CalendarDaySelected {{
+    border-radius: 8px;
+    padding: 4px;
+    text-align: center;
+    font-weight: 600;
+}}
+
+QPushButton#CalendarDay {{
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    color: #334155;
+}}
+
+QPushButton#CalendarDayMuted {{
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    color: #94a3b8;
+}}
+
+QPushButton#CalendarDayLoad1 {{
+    background: #dcfce7;
+    border: 1px solid #86efac;
+    color: #166534;
+}}
+
+QPushButton#CalendarDayLoad2 {{
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    color: #854d0e;
+}}
+
+QPushButton#CalendarDayLoad3 {{
+    background: #ffedd5;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+}}
+
+QPushButton#CalendarDayLoad4 {{
+    background: #fee2e2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+}}
+
+QPushButton#CalendarDaySelected {{
+    background: #dbeafe;
+    border: 3px solid {accent_color};
+    color: #1e3a8a;
+}}
+
 QFrame#Panel {{
     background: {panel};
     border: 1px solid {border};
     border-radius: 8px;
     padding: {panel_padding};
+}}
+
+QFrame#PersonalizationPreview {{
+    background: {panel};
+    border: 1px solid {border};
+    border-radius: 8px;
+    padding: 16px;
+}}
+
+QFrame#AssetRow {{
+    background: #fbfdff;
+    border: 1px solid {border};
+    border-radius: 8px;
 }}
 
 QLabel#Muted {{

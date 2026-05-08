@@ -247,3 +247,24 @@ def test_main_window_matches_mockup_scroll_and_action_names(monkeypatch, tmp_pat
 
     window.close()
     app.processEvents()
+
+
+def test_main_window_uses_mockup_calendar_and_tighter_main_spacing(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.main_window import MainWindow, MockupCalendar
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path / "gui.db")
+
+    assert isinstance(window.calendar, MockupCalendar)
+    assert window.calendar_today_button.text() == "回到今天"
+    assert window.calendar_month_label.text()
+    assert window.center_layout.contentsMargins().left() <= 22
+    assert window.center_layout.spacing() <= 12
+    assert window.today_scroll.minimumHeight() >= 300
+
+    window.close()
+    app.processEvents()

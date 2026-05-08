@@ -8,6 +8,7 @@ reminder.db
 .venv/
 .pytest_cache/
 .superpowers/
+assets/
 .worktrees
 .worktrees/
 *.egg-info/

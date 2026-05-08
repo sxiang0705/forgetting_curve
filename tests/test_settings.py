@@ -149,3 +149,21 @@ def test_settings_dialog_explains_interface_fields_and_uploads_assets(monkeypatc
 
     dialog.close()
     app.processEvents()
+
+
+def test_settings_dialog_keeps_asset_list_scrollable(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.dialogs import SettingsDialog
+
+    app = QApplication.instance() or QApplication([])
+    dialog = SettingsDialog()
+
+    assert dialog.asset_scroll.widgetResizable() is True
+    assert 160 <= dialog.asset_scroll.minimumHeight() <= 220
+    assert dialog.asset_scroll.maximumHeight() <= 260
+
+    dialog.close()
+    app.processEvents()

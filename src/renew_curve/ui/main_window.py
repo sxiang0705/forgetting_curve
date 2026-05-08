@@ -6,8 +6,8 @@ import shutil
 from contextlib import closing
 from pathlib import Path
 
-from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtCore import QRectF, Signal, Qt
+from PySide6.QtGui import QColor, QCloseEvent, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -42,6 +42,7 @@ from renew_curve.ui.personalization import (
 
 class MockupCalendar(QFrame):
     daySelected = Signal(dt.date)
+    monthChanged = Signal(dt.date)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -60,6 +61,9 @@ class MockupCalendar(QFrame):
 
     def selected_date(self) -> dt.date:
         return self._selected_day
+
+    def visible_month(self) -> dt.date:
+        return self._visible_month
 
     def set_counts(self, counts: dict[dt.date, int]) -> None:
         self._counts = counts
@@ -113,6 +117,7 @@ class MockupCalendar(QFrame):
 
     def _render(self) -> None:
         for button in self._day_buttons.values():
+            self.grid.removeWidget(button)
             button.deleteLater()
         self._day_buttons = {}
         self.calendar_month_label.setText(
@@ -166,6 +171,7 @@ class MockupCalendar(QFrame):
             month = 12
         self._visible_month = dt.date(year, month, 1)
         self._render()
+        self.monthChanged.emit(self._visible_month)
 
     def _next_month(self) -> None:
         year = self._visible_month.year
@@ -175,6 +181,47 @@ class MockupCalendar(QFrame):
             month = 1
         self._visible_month = dt.date(year, month, 1)
         self._render()
+        self.monthChanged.emit(self._visible_month)
+
+
+class WallpaperPanel(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("SectionPanel")
+        self.wallpaper_path: Path | None = None
+        self._wallpaper = QPixmap()
+        self._overlay_alpha = 214
+
+    def set_wallpaper(self, path: Path | None, overlay_alpha: int = 214) -> None:
+        self.wallpaper_path = path if path and path.exists() else None
+        self._overlay_alpha = max(0, min(255, overlay_alpha))
+        self._wallpaper = QPixmap(str(self.wallpaper_path)) if self.wallpaper_path else QPixmap()
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        clip = QPainterPath()
+        clip.addRoundedRect(rect, 8, 8)
+        painter.setClipPath(clip)
+        painter.fillRect(self.rect(), QColor(255, 255, 255, 238))
+
+        if not self._wallpaper.isNull():
+            target = self.rect()
+            scaled = self._wallpaper.scaled(
+                target.size(),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            x = (target.width() - scaled.width()) // 2
+            y = (target.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+            painter.fillRect(target, QColor(255, 255, 255, self._overlay_alpha))
+
+        painter.setClipping(False)
+        painter.setPen(QColor("#d9e2ef"))
+        painter.drawRoundedRect(rect, 8, 8)
 
 
 class MainWindow(QMainWindow):
@@ -193,6 +240,7 @@ class MainWindow(QMainWindow):
         self._selected_day = dt.date.today()
         self._selected_category = "全部"
         self._build_ui()
+        self._apply_active_background()
         self.refresh_dashboard()
 
     def close_database(self) -> None:
@@ -226,6 +274,9 @@ class MainWindow(QMainWindow):
 
     def _load_calendar_counts(self, day: dt.date) -> None:
         month_start = dt.date(day.year, day.month, 1)
+        self._load_calendar_counts_for_month(month_start)
+
+    def _load_calendar_counts_for_month(self, month_start: dt.date) -> None:
         with closing(connect(self.db_path)) as conn:
             init_db(conn)
             repository = ReminderRepository(conn)
@@ -429,6 +480,10 @@ class MainWindow(QMainWindow):
     def _on_calendar_selected(self) -> None:
         self.refresh_dashboard(self.calendar.selected_date())
 
+    def _on_calendar_month_changed(self, month_start: dt.date) -> None:
+        self._load_calendar_counts_for_month(month_start)
+        self.calendar.set_counts(self._calendar_counts)
+
     def _return_to_today(self) -> None:
         today = dt.date.today()
         self.refresh_dashboard(today)
@@ -501,15 +556,16 @@ class MainWindow(QMainWindow):
         self.calendar = MockupCalendar()
         self.calendar_month_label = self.calendar.calendar_month_label
         self.calendar.daySelected.connect(lambda _day: self._on_calendar_selected())
+        self.calendar.monthChanged.connect(self._on_calendar_month_changed)
         calendar_layout.addWidget(self.calendar)
         self.calendar_today_button = QPushButton("回到今天")
         self.calendar_today_button.clicked.connect(self._return_to_today)
         calendar_layout.addWidget(self.calendar_today_button)
         layout.addWidget(calendar_frame)
 
-        next_frame = QFrame()
-        next_frame.setObjectName("Panel")
-        next_layout = QVBoxLayout(next_frame)
+        self.next_three_days_section = WallpaperPanel()
+        self.next_three_days_section.setMaximumHeight(440)
+        next_layout = QVBoxLayout(self.next_three_days_section)
         next_layout.setContentsMargins(12, 12, 12, 12)
         next_header = QHBoxLayout()
         self.next_days_title = QLabel("接下來 3 天")
@@ -529,7 +585,7 @@ class MainWindow(QMainWindow):
         self.next_days_scroll.setMaximumHeight(390)
         self.next_days_scroll.setWidget(self.next_three_days_container)
         next_layout.addWidget(self.next_days_scroll)
-        layout.addWidget(next_frame, 1)
+        layout.addWidget(self.next_three_days_section, 1)
 
         return sidebar
 
@@ -581,8 +637,8 @@ class MainWindow(QMainWindow):
         self.snooze_next_button.clicked.connect(self.snooze_selected_next_reminder)
         self.snooze_next_button.hide()
 
-        self.today_section = QFrame()
-        self.today_section.setObjectName("SectionPanel")
+        self.today_section = WallpaperPanel()
+        self.today_section.setMaximumHeight(360)
         today_section_layout = QVBoxLayout(self.today_section)
         today_section_layout.setContentsMargins(14, 12, 14, 14)
         today_section_layout.setSpacing(10)
@@ -602,13 +658,13 @@ class MainWindow(QMainWindow):
         self.today_scroll.setWidgetResizable(True)
         self.today_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.today_scroll.setWidget(self.today_tasks_container)
-        self.today_scroll.setMinimumHeight(310)
-        self.today_scroll.setMaximumHeight(390)
+        self.today_scroll.setMinimumHeight(220)
+        self.today_scroll.setMaximumHeight(300)
         today_section_layout.addWidget(self.today_scroll)
         layout.addWidget(self.today_section)
 
-        self.all_tasks_section = QFrame()
-        self.all_tasks_section.setObjectName("SectionPanel")
+        self.all_tasks_section = WallpaperPanel()
+        self.all_tasks_section.setMaximumHeight(360)
         all_section_layout = QVBoxLayout(self.all_tasks_section)
         all_section_layout.setContentsMargins(14, 12, 14, 14)
         all_section_layout.setSpacing(10)
@@ -647,6 +703,7 @@ class MainWindow(QMainWindow):
         self.task_table.setMaximumHeight(260)
         all_section_layout.addWidget(self.task_table)
         layout.addWidget(self.all_tasks_section)
+        layout.addStretch(1)
 
         return center
 
@@ -788,6 +845,7 @@ class MainWindow(QMainWindow):
 
     def open_import_export_dialog(self) -> None:
         dialog = DataDialog(self)
+        self._populate_report_dialog(dialog)
         dialog.import_legacy_csv_button.clicked.connect(
             lambda: self._import_csv(dialog, "replace")
         )
@@ -798,6 +856,24 @@ class MainWindow(QMainWindow):
             lambda: self._import_full_backup(dialog)
         )
         dialog.exec()
+
+    def _populate_report_dialog(
+        self, dialog: DataDialog, today: dt.date | None = None
+    ) -> None:
+        report_day = today or dt.date.today()
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            stats = repository.report_stats(report_day)
+            weekly_completed, weekly_total, weekly_rate = (
+                repository.weekly_completion_rate(report_day)
+            )
+        dialog.set_report_summary(
+            stats,
+            weekly_completed=weekly_completed,
+            weekly_total=weekly_total,
+            weekly_rate=weekly_rate,
+        )
 
     def open_schedule_help_dialog(self) -> None:
         QMessageBox.information(
@@ -843,11 +919,19 @@ class MainWindow(QMainWindow):
                     repository.set_setting(key, value)
 
         self.setStyleSheet(self._stylesheet_for_settings(values))
+        self._apply_active_background(values)
 
     def _load_background_assets(self) -> list[tuple[int, str, str, bool]]:
         with closing(connect(self.db_path)) as conn:
             init_db(conn)
             return ReminderRepository(conn).list_background_assets()
+
+    def _active_background_path(self) -> Path | None:
+        for _asset_id, _name, path, active in self._load_background_assets():
+            candidate = Path(path)
+            if active and candidate.exists():
+                return candidate
+        return None
 
     def _load_sticker_assets(self) -> list[tuple[int, str, str, bool]]:
         with closing(connect(self.db_path)) as conn:
@@ -868,6 +952,22 @@ class MainWindow(QMainWindow):
                     repository.add_background_asset(source.name, str(target), active=True)
                 else:
                     repository.add_sticker_asset(source.name, str(target), active=True)
+        if kind == "backgrounds":
+            self._apply_active_background()
+
+    def _apply_active_background(self, settings: dict[str, str] | None = None) -> None:
+        if not all(
+            hasattr(self, attr)
+            for attr in ("today_section", "all_tasks_section", "next_three_days_section")
+        ):
+            return
+        settings = settings or self._load_personalization_settings()
+        overlay = int(settings.get("background_overlay", "60"))
+        overlay_alpha = int(255 * max(0, min(100, overlay)) / 100)
+        path = self._active_background_path()
+        self.today_section.set_wallpaper(path, overlay_alpha)
+        self.all_tasks_section.set_wallpaper(path, overlay_alpha)
+        self.next_three_days_section.set_wallpaper(path, overlay_alpha)
 
     @staticmethod
     def _unique_asset_path(target_dir: Path, filename: str) -> Path:

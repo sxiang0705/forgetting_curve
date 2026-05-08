@@ -79,6 +79,40 @@ def test_data_dialog_labels_match_v8_backup_flow(monkeypatch):
     app.processEvents()
 
 
+def test_data_dialog_can_show_real_report_summary(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.models import ReportStats
+    from renew_curve.ui.dialogs import DataDialog
+
+    app = QApplication.instance() or QApplication([])
+    dialog = DataDialog()
+
+    dialog.set_report_summary(
+        ReportStats(
+            total_tasks=42,
+            today_reminders=5,
+            pending_reminders=112,
+            completed_reminders=194,
+            total_completion_percent=63.4,
+        ),
+        weekly_completed=17,
+        weekly_total=25,
+        weekly_rate=68.0,
+    )
+
+    assert dialog.total_tasks_value.text() == "42"
+    assert dialog.today_reminders_value.text() == "5"
+    assert dialog.weekly_rate_value.text() == "68%"
+    assert "17 / 25" in dialog.weekly_fraction_label.text()
+    assert dialog.total_completion_value.text() == "63%"
+
+    dialog.close()
+    app.processEvents()
+
+
 def test_main_window_exposes_full_backup_actions():
     from renew_curve.ui.main_window import MainWindow
 

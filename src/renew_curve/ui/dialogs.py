@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from renew_curve.models import ReportStats
 from renew_curve.scheduler import generated_review_times, validate_manual_review_times
 
 
@@ -157,6 +158,7 @@ class SettingsDialog(QDialog):
         self.asset_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.asset_scroll.setWidget(lists)
         self.asset_scroll.setMinimumHeight(170)
+        self.asset_scroll.setMaximumHeight(240)
         asset_layout.addWidget(self.asset_scroll)
 
         left_content = QWidget()
@@ -553,9 +555,37 @@ class DataDialog(QDialog):
         stats_title = QLabel("前 7 天總完成率")
         stats_title.setStyleSheet("font-size: 22px; font-weight: 800;")
         stats_layout.addWidget(stats_title)
-        stats_layout.addWidget(
-            QLabel("計算方式：前 7 天所有到期提醒加總後，以完成數 / 應完成數計算。")
+        weekly_note = QLabel(
+            "計算方式：前 7 天所有到期提醒加總後，以完成數 / 應完成數計算。"
         )
+        weekly_note.setWordWrap(True)
+        stats_layout.addWidget(weekly_note)
+        self.weekly_rate_value = QLabel("--")
+        self.weekly_rate_value.setStyleSheet("font-size: 42px; font-weight: 900;")
+        self.weekly_fraction_label = QLabel("尚未載入統計")
+        self.weekly_fraction_label.setObjectName("Muted")
+        stats_layout.addWidget(self.weekly_rate_value)
+        stats_layout.addWidget(self.weekly_fraction_label)
+
+        self.total_tasks_value = QLabel("0")
+        self.today_reminders_value = QLabel("0")
+        self.pending_reminders_value = QLabel("0")
+        self.completed_reminders_value = QLabel("0")
+        self.total_completion_value = QLabel("0%")
+        metric_row = QHBoxLayout()
+        metric_row.addWidget(self._metric_card("全部任務", self.total_tasks_value))
+        metric_row.addWidget(self._metric_card("今日任務", self.today_reminders_value))
+        metric_row.addWidget(self._metric_card("總完成率", self.total_completion_value))
+        stats_layout.addLayout(metric_row)
+
+        reminder_row = QHBoxLayout()
+        reminder_row.addWidget(
+            self._metric_card("未完成提醒", self.pending_reminders_value)
+        )
+        reminder_row.addWidget(
+            self._metric_card("已完成提醒", self.completed_reminders_value)
+        )
+        stats_layout.addLayout(reminder_row)
         stats_layout.addStretch(1)
 
         body = QHBoxLayout()
@@ -565,6 +595,36 @@ class DataDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addLayout(header)
         layout.addLayout(body)
+
+    def set_report_summary(
+        self,
+        stats: ReportStats,
+        *,
+        weekly_completed: int,
+        weekly_total: int,
+        weekly_rate: float,
+    ) -> None:
+        self.total_tasks_value.setText(str(stats.total_tasks))
+        self.today_reminders_value.setText(str(stats.today_reminders))
+        self.pending_reminders_value.setText(str(stats.pending_reminders))
+        self.completed_reminders_value.setText(str(stats.completed_reminders))
+        self.total_completion_value.setText(f"{stats.total_completion_percent:.0f}%")
+        self.weekly_rate_value.setText(f"{weekly_rate:.0f}%")
+        self.weekly_fraction_label.setText(
+            f"{weekly_completed} / {weekly_total} 筆提醒已完成"
+        )
+
+    def _metric_card(self, title: str, value_label: QLabel) -> QFrame:
+        card = QFrame()
+        card.setObjectName("Panel")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 8, 10, 8)
+        label = QLabel(title)
+        label.setObjectName("Muted")
+        value_label.setStyleSheet("font-size: 24px; font-weight: 800;")
+        layout.addWidget(label)
+        layout.addWidget(value_label)
+        return card
 
     def choose_csv_open(self) -> Path | None:
         path, _ = QFileDialog.getOpenFileName(

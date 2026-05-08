@@ -264,7 +264,7 @@ def test_main_window_uses_mockup_calendar_and_tighter_main_spacing(monkeypatch, 
     assert window.calendar_month_label.text()
     assert window.center_layout.contentsMargins().left() <= 22
     assert window.center_layout.spacing() <= 12
-    assert window.today_scroll.minimumHeight() >= 300
+    assert 200 <= window.today_scroll.minimumHeight() <= 260
 
     window.close()
     app.processEvents()
@@ -284,6 +284,9 @@ def test_main_window_sections_table_and_calendar_legend_review(monkeypatch, tmp_
     assert window.all_tasks_section.objectName() == "SectionPanel"
     assert window.next_days_scroll.widgetResizable() is True
     assert window.next_days_scroll.maximumHeight() <= 390
+    assert window.next_three_days_section.maximumHeight() <= 460
+    assert window.today_section.maximumHeight() <= 380
+    assert window.all_tasks_section.maximumHeight() <= 380
     assert window.task_table.columnCount() == 6
     assert window.task_table.horizontalHeaderItem(1).text() == "備註"
     assert window.task_table.maximumHeight() == window.task_table.minimumHeight()
@@ -321,6 +324,122 @@ def test_main_window_stores_uploaded_personalization_assets(monkeypatch, tmp_pat
     assert [(name, path, active) for _, name, path, active in backgrounds] == [
         (source.name, str(copied), True)
     ]
+
+    window.close()
+    app.processEvents()
+
+
+def test_uploaded_background_is_used_by_task_sections(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.main_window import MainWindow, WallpaperPanel
+
+    app = QApplication.instance() or QApplication([])
+    db_path = tmp_path / "gui.db"
+    source = tmp_path / "bg.jpg"
+    source.write_bytes(b"fake-jpg")
+    window = MainWindow(db_path)
+
+    window._store_personalization_asset(source, "backgrounds")
+    window._apply_active_background()
+
+    copied = tmp_path / "assets" / "backgrounds" / source.name
+    assert isinstance(window.today_section, WallpaperPanel)
+    assert isinstance(window.all_tasks_section, WallpaperPanel)
+    assert isinstance(window.next_three_days_section, WallpaperPanel)
+    assert window.today_section.wallpaper_path == copied
+    assert window.all_tasks_section.wallpaper_path == copied
+    assert window.next_three_days_section.wallpaper_path == copied
+
+    window.close()
+    app.processEvents()
+
+
+def test_calendar_month_navigation_refreshes_visible_month_counts(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    import datetime as dt
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.db import ReminderRepository, connect, init_db
+    from renew_curve.models import ReminderDraft, TaskDraft
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    db_path = tmp_path / "gui.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        with conn:
+            task_id = repo.create_task(
+                TaskDraft(
+                    title="九月任務",
+                    category="英文單字",
+                    difficulty="初級",
+                    notes="",
+                    reminder_method="遺忘曲線",
+                    start_time=dt.datetime(2026, 9, 1, 9, 0),
+                )
+            )
+            repo.create_reminder(
+                ReminderDraft(task_id, dt.datetime(2026, 9, 9, 9, 0))
+            )
+
+    window = MainWindow(db_path)
+    window.refresh_dashboard(dt.date(2026, 5, 8))
+
+    for _ in range(4):
+        window.calendar.next_month_button.click()
+
+    assert window.calendar.visible_month() == dt.date(2026, 9, 1)
+    assert window.calendar._counts[dt.date(2026, 9, 9)] == 1
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_populates_report_dialog_summary(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    import datetime as dt
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.db import ReminderRepository, connect, init_db
+    from renew_curve.models import ReminderDraft, TaskDraft
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    db_path = tmp_path / "gui.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        with conn:
+            task_id = repo.create_task(
+                TaskDraft("報表測試", "工作", "初級", "", "遺忘曲線", dt.datetime(2026, 5, 1, 9, 0))
+            )
+            repo.create_reminder(
+                ReminderDraft(task_id, dt.datetime(2026, 5, 6, 9, 0), reminded=True)
+            )
+            repo.create_reminder(
+                ReminderDraft(task_id, dt.datetime(2026, 5, 7, 9, 0), reminded=False)
+            )
+
+    captured = {}
+
+    class FakeDialog:
+        def set_report_summary(self, stats, *, weekly_completed, weekly_total, weekly_rate):
+            captured["stats"] = stats
+            captured["weekly"] = (weekly_completed, weekly_total, weekly_rate)
+
+    window = MainWindow(db_path)
+    window._populate_report_dialog(FakeDialog(), today=dt.date(2026, 5, 7))
+
+    assert captured["stats"].total_tasks == 1
+    assert captured["weekly"] == (1, 2, 50.0)
 
     window.close()
     app.processEvents()

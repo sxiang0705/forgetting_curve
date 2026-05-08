@@ -19,7 +19,7 @@ def test_main_window_builds_offscreen_and_refreshes_after_replace_import(
     db_path = tmp_path / "gui.db"
     window = MainWindow(db_path)
 
-    assert window.task_table.columnCount() == 5
+    assert window.task_table.columnCount() == 6
     assert window.task_table.rowCount() == 0
 
     import_legacy_csv(FIXTURE, db_path, mode="replace")
@@ -117,7 +117,7 @@ def test_main_window_shows_and_completes_next_reminder(monkeypatch, tmp_path):
 
     window = MainWindow(db_path)
 
-    assert window.task_table.item(0, 2).text() == "2026-05-07 09:00"
+    assert window.task_table.item(0, 3).text() == "2026-05-07 09:00"
 
     window.task_table.selectRow(0)
     window.complete_next_button.click()
@@ -131,7 +131,7 @@ def test_main_window_shows_and_completes_next_reminder(monkeypatch, tmp_path):
     assert reminder.reminded is True
     assert task is not None
     assert task.is_completed is True
-    assert window.task_table.item(0, 3).text() == "100%"
+    assert window.task_table.item(0, 4).text() == "100%"
 
     window.close()
     app.processEvents()
@@ -183,7 +183,7 @@ def test_main_window_snoozes_next_reminder_with_saved_preference(
         reminder = repo.list_reminders(task_id)[0]
 
     assert reminder.remind_time == dt.datetime(2026, 5, 7, 10, 30)
-    assert window.task_table.item(0, 2).text() == "2026-05-07 10:30"
+    assert window.task_table.item(0, 3).text() == "2026-05-07 10:30"
 
     window.close()
     app.processEvents()
@@ -203,7 +203,7 @@ def test_main_window_uses_traditional_chinese_primary_labels(monkeypatch, tmp_pa
     assert window.import_export_button.text() == "報表 / 資料"
     assert window.settings_button.text() == "個人化"
     assert window.task_table.horizontalHeaderItem(0).text() == "任務"
-    assert window.task_table.horizontalHeaderItem(2).text() == "下一次"
+    assert window.task_table.horizontalHeaderItem(3).text() == "下一次"
 
     window.close()
     app.processEvents()
@@ -265,6 +265,62 @@ def test_main_window_uses_mockup_calendar_and_tighter_main_spacing(monkeypatch, 
     assert window.center_layout.contentsMargins().left() <= 22
     assert window.center_layout.spacing() <= 12
     assert window.today_scroll.minimumHeight() >= 300
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_sections_table_and_calendar_legend_review(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path / "gui.db")
+
+    assert window.today_section.objectName() == "SectionPanel"
+    assert window.all_tasks_section.objectName() == "SectionPanel"
+    assert window.next_days_scroll.widgetResizable() is True
+    assert window.next_days_scroll.maximumHeight() <= 390
+    assert window.task_table.columnCount() == 6
+    assert window.task_table.horizontalHeaderItem(1).text() == "備註"
+    assert window.task_table.maximumHeight() == window.task_table.minimumHeight()
+    assert window.schedule_help_button.isHidden() is True
+
+    swatches = window.calendar.findChildren(QLabel, "CalendarLegendSwatch")
+    assert len(swatches) == 4
+    assert "綠" not in window.calendar.legend_label.text()
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_stores_uploaded_personalization_assets(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.db import ReminderRepository, connect
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    db_path = tmp_path / "gui.db"
+    source = tmp_path / "sample-background.png"
+    source.write_bytes(b"fake-image")
+    window = MainWindow(db_path)
+
+    window._store_personalization_asset(source, "backgrounds")
+
+    copied = tmp_path / "assets" / "backgrounds" / source.name
+    with connect(db_path) as conn:
+        backgrounds = ReminderRepository(conn).list_background_assets()
+
+    assert copied.read_bytes() == b"fake-image"
+    assert [(name, path, active) for _, name, path, active in backgrounds] == [
+        (source.name, str(copied), True)
+    ]
 
     window.close()
     app.processEvents()

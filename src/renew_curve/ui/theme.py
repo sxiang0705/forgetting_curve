@@ -43,7 +43,7 @@ QMainWindow {{
 QWidget {{
     color: {text};
     font-family: "Segoe UI", "Noto Sans TC", sans-serif;
-    font-size: 14px;
+    font-size: 16px;
 }}
 
 #Sidebar {{
@@ -166,11 +166,15 @@ QPushButton#CalendarDaySelected {{
     color: #1e3a8a;
 }}
 
-QFrame#Panel {{
+QFrame#Panel, QFrame#SectionPanel {{
     background: {panel};
     border: 1px solid {border};
     border-radius: 8px;
     padding: {panel_padding};
+}}
+
+QFrame#SectionPanel {{
+    padding: 10px;
 }}
 
 QFrame#PersonalizationPreview {{

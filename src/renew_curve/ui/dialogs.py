@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QDateTime, Qt
@@ -27,11 +28,19 @@ from renew_curve.scheduler import generated_review_times, validate_manual_review
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None, current: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        parent=None,
+        current: dict[str, str] | None = None,
+        upload_background: Callable[[Path], None] | None = None,
+        upload_sticker: Callable[[Path], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("個人化")
         self.resize(960, 560)
         current = current or {}
+        self._upload_background = upload_background
+        self._upload_sticker = upload_sticker
 
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["light", "dark", "system"])
@@ -85,6 +94,17 @@ class SettingsDialog(QDialog):
 
         self.interface_section_title = QLabel("介面風格")
         self.interface_section_title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        self.interface_help_label = QLabel(
+            "主題模式會決定整體氣氛；重點色、密度與推延偏好會套用到所有主要視窗。"
+        )
+        self.interface_help_label.setObjectName("Muted")
+        self.interface_help_label.setWordWrap(True)
+        self.accent_help_label = QLabel("重點色會套用在按鈕、選取狀態與月曆焦點。")
+        self.accent_help_label.setObjectName("Muted")
+        self.accent_help_label.setWordWrap(True)
+        self.density_help_label = QLabel("密度會影響留白與列表高度，16 吋與 27 吋螢幕都會較好閱讀。")
+        self.density_help_label.setObjectName("Muted")
+        self.density_help_label.setWordWrap(True)
         interface_form = QFormLayout()
         interface_form.addRow("主題", self.theme_combo)
         interface_form.addRow("重點色", self.accent_combo)
@@ -98,6 +118,9 @@ class SettingsDialog(QDialog):
         interface_panel.setObjectName("Panel")
         interface_layout = QVBoxLayout(interface_panel)
         interface_layout.addWidget(self.interface_section_title)
+        interface_layout.addWidget(self.interface_help_label)
+        interface_layout.addWidget(self.accent_help_label)
+        interface_layout.addWidget(self.density_help_label)
         interface_layout.addLayout(interface_form)
 
         self.assets_section_title = QLabel("我的素材")
@@ -109,6 +132,8 @@ class SettingsDialog(QDialog):
 
         self.upload_background_button = QPushButton("上傳背景圖片")
         self.upload_sticker_button = QPushButton("上傳貼圖 PNG / GIF")
+        self.upload_background_button.clicked.connect(self._choose_and_upload_background)
+        self.upload_sticker_button.clicked.connect(self._choose_and_upload_sticker)
         asset_layout.addWidget(self.upload_background_button)
         asset_layout.addWidget(self.upload_sticker_button)
 
@@ -208,6 +233,34 @@ class SettingsDialog(QDialog):
         self.sticker_assets = assets
         self._render_asset_lists()
 
+    def choose_background_file(self) -> Path | None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "上傳背景圖片",
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
+        return Path(path) if path else None
+
+    def choose_sticker_file(self) -> Path | None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "上傳貼圖",
+            "",
+            "Images (*.png *.gif *.jpg *.jpeg *.webp *.bmp)",
+        )
+        return Path(path) if path else None
+
+    def _choose_and_upload_background(self) -> None:
+        path = self.choose_background_file()
+        if path is not None and self._upload_background is not None:
+            self._upload_background(path)
+
+    def _choose_and_upload_sticker(self) -> None:
+        path = self.choose_sticker_file()
+        if path is not None and self._upload_sticker is not None:
+            self._upload_sticker(path)
+
     def _render_asset_lists(self) -> None:
         if not hasattr(self, "background_list"):
             return
@@ -261,6 +314,11 @@ class TaskDialog(QDialog):
         self.notes_edit = QTextEdit()
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["遺忘曲線", "手動輸入"])
+        self.schedule_help_label = QLabel(
+            "遺忘曲線會依開始時間自動產生複習點；手動輸入可自行指定每一次提醒時間。"
+        )
+        self.schedule_help_label.setObjectName("Muted")
+        self.schedule_help_label.setWordWrap(True)
         self.start_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.start_edit.setCalendarPopup(True)
         self.start_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
@@ -294,6 +352,7 @@ class TaskDialog(QDialog):
         form.addRow("難度", self.difficulty_combo)
         form.addRow("筆記", self.notes_edit)
         form.addRow("提醒模式", self.mode_combo)
+        form.addRow("", self.schedule_help_label)
         form.addRow("開始時間", self.start_edit)
         form.addRow("複習次數", self.review_count_spin)
 

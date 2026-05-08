@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import calendar as calendar_lib
+import shutil
 from contextlib import closing
 from pathlib import Path
 
@@ -97,9 +98,18 @@ class MockupCalendar(QFrame):
             self.grid.addWidget(label, 0, column)
         layout.addLayout(self.grid)
 
-        legend = QLabel("1-2 綠 / 3-4 黃 / 5-6 橘 / 7+ 紅")
-        legend.setObjectName("Muted")
-        layout.addWidget(legend)
+        legend_row = QHBoxLayout()
+        legend_row.setSpacing(8)
+        for color in ["#dcfce7", "#fef3c7", "#ffedd5", "#fee2e2"]:
+            swatch = QLabel("")
+            swatch.setObjectName("CalendarLegendSwatch")
+            swatch.setFixedSize(13, 13)
+            swatch.setStyleSheet(f"background: {color}; border-radius: 4px;")
+            legend_row.addWidget(swatch)
+        self.legend_label = QLabel("1-2 / 3-4 / 5-6 / 7+")
+        self.legend_label.setObjectName("Muted")
+        legend_row.addWidget(self.legend_label, 1)
+        layout.addLayout(legend_row)
 
     def _render(self) -> None:
         for button in self._day_buttons.values():
@@ -270,6 +280,7 @@ class MainWindow(QMainWindow):
             )
             values = [
                 task.title,
+                task.notes or "無",
                 task.category,
                 self._format_next_reminder(next_reminder.remind_time)
                 if next_reminder is not None
@@ -458,6 +469,7 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._build_center(), 1)
 
         self.setCentralWidget(root)
+        self.setMinimumSize(1040, 680)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -507,8 +519,16 @@ class MainWindow(QMainWindow):
         next_caption.setObjectName("Muted")
         next_header.addWidget(next_caption)
         next_layout.addLayout(next_header)
-        self.next_three_days_layout = QVBoxLayout()
-        next_layout.addLayout(self.next_three_days_layout)
+        self.next_three_days_container = QWidget()
+        self.next_three_days_layout = QVBoxLayout(self.next_three_days_container)
+        self.next_three_days_layout.setContentsMargins(0, 0, 0, 0)
+        self.next_three_days_layout.setSpacing(10)
+        self.next_days_scroll = QScrollArea()
+        self.next_days_scroll.setWidgetResizable(True)
+        self.next_days_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.next_days_scroll.setMaximumHeight(390)
+        self.next_days_scroll.setWidget(self.next_three_days_container)
+        next_layout.addWidget(self.next_days_scroll)
         layout.addWidget(next_frame, 1)
 
         return sidebar
@@ -532,9 +552,7 @@ class MainWindow(QMainWindow):
         header.addWidget(self.import_export_button)
 
         self.schedule_help_button = QPushButton("排程說明")
-        self.schedule_help_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.schedule_help_button.clicked.connect(self.open_schedule_help_dialog)
-        header.addWidget(self.schedule_help_button)
+        self.schedule_help_button.hide()
 
         self.settings_button = QPushButton("個人化")
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -550,7 +568,6 @@ class MainWindow(QMainWindow):
 
         self.selected_day_label = QLabel("")
         self.selected_day_label.setObjectName("Muted")
-        layout.addWidget(self.selected_day_label)
 
         # Compatibility buttons for existing keyboard/test paths; visible task cards
         # now carry the primary completion and snooze actions.
@@ -564,6 +581,18 @@ class MainWindow(QMainWindow):
         self.snooze_next_button.clicked.connect(self.snooze_selected_next_reminder)
         self.snooze_next_button.hide()
 
+        self.today_section = QFrame()
+        self.today_section.setObjectName("SectionPanel")
+        today_section_layout = QVBoxLayout(self.today_section)
+        today_section_layout.setContentsMargins(14, 12, 14, 14)
+        today_section_layout.setSpacing(10)
+        today_header = QHBoxLayout()
+        today_title = QLabel("今天任務")
+        today_title.setStyleSheet("font-size: 20px; font-weight: 800;")
+        today_header.addWidget(today_title, 1)
+        today_header.addWidget(self.selected_day_label)
+        today_section_layout.addLayout(today_header)
+
         self.today_tasks_container = QWidget()
         self.today_tasks_container.setObjectName("TodayTasks")
         self.today_tasks_layout = QVBoxLayout(self.today_tasks_container)
@@ -575,8 +604,14 @@ class MainWindow(QMainWindow):
         self.today_scroll.setWidget(self.today_tasks_container)
         self.today_scroll.setMinimumHeight(310)
         self.today_scroll.setMaximumHeight(390)
-        layout.addWidget(self.today_scroll)
+        today_section_layout.addWidget(self.today_scroll)
+        layout.addWidget(self.today_section)
 
+        self.all_tasks_section = QFrame()
+        self.all_tasks_section.setObjectName("SectionPanel")
+        all_section_layout = QVBoxLayout(self.all_tasks_section)
+        all_section_layout.setContentsMargins(14, 12, 14, 14)
+        all_section_layout.setSpacing(10)
         all_header = QHBoxLayout()
         all_title = QLabel("所有任務")
         all_title.setStyleSheet("font-size: 20px; font-weight: 800;")
@@ -584,16 +619,16 @@ class MainWindow(QMainWindow):
         all_note = QLabel("任務很多時此區塊內部捲動")
         all_note.setObjectName("Muted")
         all_header.addWidget(all_note)
-        layout.addLayout(all_header)
+        all_section_layout.addLayout(all_header)
 
         self.category_chips_layout = QHBoxLayout()
         self.category_chips_layout.setSpacing(8)
-        layout.addLayout(self.category_chips_layout)
+        all_section_layout.addLayout(self.category_chips_layout)
 
-        self.task_table = QTableWidget(0, 5)
+        self.task_table = QTableWidget(0, 6)
         self.task_table.setObjectName("AllTasks")
         self.task_table.setHorizontalHeaderLabels(
-            ["任務", "分類", "下一次", "進度", "狀態"]
+            ["任務", "備註", "分類", "下一次", "進度", "狀態"]
         )
         self.task_table.setAlternatingRowColors(True)
         self.task_table.setSelectionBehavior(
@@ -601,14 +636,17 @@ class MainWindow(QMainWindow):
         )
         self.task_table.setShowGrid(False)
         self.task_table.verticalHeader().setVisible(False)
-        self.task_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for column in range(1, 5):
+        self.task_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.task_table.setColumnWidth(0, 220)
+        self.task_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        for column in range(2, 6):
             self.task_table.horizontalHeader().setSectionResizeMode(
                 column, QHeaderView.ResizeToContents
             )
-        self.task_table.setMinimumHeight(240)
-        self.task_table.setMaximumHeight(300)
-        layout.addWidget(self.task_table, 1)
+        self.task_table.setMinimumHeight(260)
+        self.task_table.setMaximumHeight(260)
+        all_section_layout.addWidget(self.task_table)
+        layout.addWidget(self.all_tasks_section)
 
         return center
 
@@ -628,38 +666,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(value_label)
 
         return card
-
-    def _build_right_panel(self) -> QWidget:
-        panel = QWidget()
-        panel.setFixedWidth(320)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 24, 28, 24)
-        layout.setSpacing(14)
-
-        calendar_frame = QFrame()
-        calendar_frame.setObjectName("Panel")
-        calendar_layout = QVBoxLayout(calendar_frame)
-        calendar_layout.setContentsMargins(12, 12, 12, 12)
-        self.calendar = QCalendarWidget()
-        calendar_layout.addWidget(self.calendar)
-        layout.addWidget(calendar_frame)
-
-        day_frame = QFrame()
-        day_frame.setObjectName("Panel")
-        day_layout = QVBoxLayout(day_frame)
-        day_layout.setContentsMargins(14, 12, 14, 12)
-        day_title = QLabel("選取日期")
-        day_title.setStyleSheet("font-size: 18px; font-weight: 700;")
-        self.selected_day_label = QLabel(
-            self.calendar.selectedDate().toString("yyyy-MM-dd")
-        )
-        self.selected_day_label.setObjectName("Muted")
-        day_layout.addWidget(day_title)
-        day_layout.addWidget(self.selected_day_label)
-        day_layout.addStretch(1)
-        layout.addWidget(day_frame, 1)
-
-        return panel
 
     @staticmethod
     def _status_label(task: Task) -> str:
@@ -804,7 +810,27 @@ class MainWindow(QMainWindow):
 
     def open_settings_dialog(self) -> None:
         current = self._load_personalization_settings()
-        dialog = SettingsDialog(self, current)
+        dialog_holder: list[SettingsDialog] = []
+
+        def upload_background(path: Path) -> None:
+            self._store_personalization_asset(path, "backgrounds")
+            if dialog_holder:
+                dialog_holder[0].set_background_assets(self._load_background_assets())
+
+        def upload_sticker(path: Path) -> None:
+            self._store_personalization_asset(path, "stickers")
+            if dialog_holder:
+                dialog_holder[0].set_sticker_assets(self._load_sticker_assets())
+
+        dialog = SettingsDialog(
+            self,
+            current,
+            upload_background=upload_background,
+            upload_sticker=upload_sticker,
+        )
+        dialog_holder.append(dialog)
+        dialog.set_background_assets(self._load_background_assets())
+        dialog.set_sticker_assets(self._load_sticker_assets())
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -817,6 +843,45 @@ class MainWindow(QMainWindow):
                     repository.set_setting(key, value)
 
         self.setStyleSheet(self._stylesheet_for_settings(values))
+
+    def _load_background_assets(self) -> list[tuple[int, str, str, bool]]:
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            return ReminderRepository(conn).list_background_assets()
+
+    def _load_sticker_assets(self) -> list[tuple[int, str, str, bool]]:
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            return ReminderRepository(conn).list_sticker_assets()
+
+    def _store_personalization_asset(self, source: Path, kind: str) -> None:
+        target_dir = self._assets_dir() / kind
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = self._unique_asset_path(target_dir, source.name)
+        shutil.copy2(source, target)
+
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            with conn:
+                if kind == "backgrounds":
+                    repository.add_background_asset(source.name, str(target), active=True)
+                else:
+                    repository.add_sticker_asset(source.name, str(target), active=True)
+
+    @staticmethod
+    def _unique_asset_path(target_dir: Path, filename: str) -> Path:
+        candidate = target_dir / filename
+        if not candidate.exists():
+            return candidate
+        stem = candidate.stem
+        suffix = candidate.suffix
+        counter = 2
+        while True:
+            next_candidate = target_dir / f"{stem}-{counter}{suffix}"
+            if not next_candidate.exists():
+                return next_candidate
+            counter += 1
 
     def _load_personalization_settings(self) -> dict[str, str]:
         defaults = default_personalization_settings()

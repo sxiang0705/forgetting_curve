@@ -107,3 +107,45 @@ def test_settings_dialog_uses_personalization_sections(monkeypatch):
 
     dialog.close()
     app.processEvents()
+
+
+def test_settings_dialog_explains_interface_fields_and_uploads_assets(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.dialogs import SettingsDialog
+
+    app = QApplication.instance() or QApplication([])
+    captured: list[tuple[str, Path]] = []
+    dialog = SettingsDialog(
+        upload_background=lambda path: captured.append(("background", path)),
+        upload_sticker=lambda path: captured.append(("sticker", path)),
+    )
+
+    assert "主題模式會決定整體氣氛" in dialog.interface_help_label.text()
+    assert "重點色會套用在按鈕" in dialog.accent_help_label.text()
+    assert "密度會影響留白" in dialog.density_help_label.text()
+
+    monkeypatch.setattr(
+        SettingsDialog,
+        "choose_background_file",
+        lambda self: Path("C:/tmp/background.png"),
+    )
+    monkeypatch.setattr(
+        SettingsDialog,
+        "choose_sticker_file",
+        lambda self: Path("C:/tmp/sticker.png"),
+    )
+    dialog.upload_background_button.click()
+    dialog.upload_sticker_button.click()
+
+    assert captured == [
+        ("background", Path("C:/tmp/background.png")),
+        ("sticker", Path("C:/tmp/sticker.png")),
+    ]
+
+    dialog.close()
+    app.processEvents()

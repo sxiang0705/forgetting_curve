@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
-from PySide6.QtCore import QDateTime
+from PySide6.QtCore import QDateTime, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDateTimeEdit,
@@ -11,13 +11,16 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
 from renew_curve.scheduler import generated_review_times, validate_manual_review_times
@@ -149,11 +152,25 @@ class TaskDialog(QDialog):
         self.review_count_spin.setRange(3, 10)
         self.review_count_spin.setValue(5)
         self.manual_time_edits: list[QDateTimeEdit] = []
+        self.manual_time_rows: list[QWidget] = []
         for _ in range(10):
             edit = QDateTimeEdit(QDateTime.currentDateTime())
             edit.setCalendarPopup(True)
             edit.setDisplayFormat("yyyy-MM-dd HH:mm")
             self.manual_time_edits.append(edit)
+
+        self.manual_times_widget = QWidget()
+        self.manual_times_layout = QVBoxLayout(self.manual_times_widget)
+        self.manual_times_layout.setContentsMargins(0, 0, 0, 0)
+        self.manual_times_layout.setSpacing(8)
+        for index, edit in enumerate(self.manual_time_edits, start=1):
+            row_widget = QWidget()
+            row = QHBoxLayout(row_widget)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addWidget(QLabel(f"第 {index} 次"))
+            row.addWidget(edit, 1)
+            self.manual_time_rows.append(row_widget)
+            self.manual_times_layout.addWidget(row_widget)
 
         form = QFormLayout()
         form.addRow("任務名稱", self.title_edit)
@@ -164,21 +181,101 @@ class TaskDialog(QDialog):
         form.addRow("開始時間", self.start_edit)
         form.addRow("複習次數", self.review_count_spin)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        left_panel = QFrame()
+        left_panel.setObjectName("Panel")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.addLayout(form)
+        left_layout.addWidget(self.manual_times_widget)
+
+        self.preview_layout = QVBoxLayout()
+        preview_panel = QFrame()
+        preview_panel.setObjectName("Panel")
+        preview_layout = QVBoxLayout(preview_panel)
+        title = QLabel("複習日期預覽")
+        title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        hint = QLabel("新增前先確認會產生哪些提醒。")
+        hint.setObjectName("Muted")
+        preview_layout.addWidget(title)
+        preview_layout.addWidget(hint)
+        preview_layout.addLayout(self.preview_layout)
+        preview_layout.addStretch(1)
+
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(16)
+        content_layout.addWidget(left_panel, 2)
+        content_layout.addWidget(preview_panel, 1)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setWidget(content)
+
+        self.cancel_button = QPushButton("取消")
+        self.cancel_button.clicked.connect(self.reject)
+        self.create_button = QPushButton("新增任務")
+        self.create_button.setObjectName("PrimaryButton")
+        self.create_button.clicked.connect(self.accept)
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        footer.addWidget(self.cancel_button)
+        footer.addWidget(self.create_button)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+        layout.addWidget(self.scroll_area)
+        layout.addLayout(footer)
+
+        self.resize(980, 560)
+        self.mode_combo.currentTextChanged.connect(self._sync_schedule_mode)
+        self.start_edit.dateTimeChanged.connect(lambda _value: self._render_preview())
+        self.review_count_spin.valueChanged.connect(lambda _value: self._sync_schedule_mode())
+        for edit in self.manual_time_edits:
+            edit.dateTimeChanged.connect(lambda _value: self._render_preview())
+        self._sync_schedule_mode()
 
     def set_categories(self, categories: list[str]) -> None:
         self.category_edit.clear()
         self.category_edit.addItems(categories)
         self.category_edit.setEditable(True)
+
+    def _sync_schedule_mode(self, *_args: object) -> None:
+        is_manual = self.mode_combo.currentText() == "手動輸入"
+        for index, row in enumerate(self.manual_time_rows):
+            row.setVisible(is_manual and index < self.review_count_spin.value())
+        self.manual_times_widget.setVisible(is_manual)
+        self._render_preview()
+
+    def _render_preview(self) -> None:
+        while self.preview_layout.count():
+            item = self.preview_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        try:
+            times = self.preview_review_times()
+        except ValueError as exc:
+            label = QLabel(str(exc))
+            label.setObjectName("Muted")
+            self.preview_layout.addWidget(label)
+            return
+        start_time = self._start_time()
+        for index, remind_time in enumerate(times, start=1):
+            row = QFrame()
+            row.setObjectName("PreviewRow")
+            layout = QHBoxLayout(row)
+            badge = QLabel(str(index))
+            badge.setObjectName("CountPill")
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedWidth(48)
+            layout.addWidget(badge)
+            text = QLabel(
+                f"{remind_time.strftime('%Y-%m-%d %H:%M')}\n"
+                f"開始後 {max((remind_time.date() - start_time.date()).days, 0)} 天"
+            )
+            text.setWordWrap(True)
+            layout.addWidget(text, 1)
+            self.preview_layout.addWidget(row)
 
     def preview_review_times(self) -> list[dt.datetime]:
         start_time = self._start_time()
@@ -223,6 +320,7 @@ class DataDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("報表 / 資料")
+        self.resize(920, 560)
 
         description = QLabel(
             "這裡只保留三個主要入口。CSV 用於舊版資料轉移，完整資料請使用 ZIP。"
@@ -232,25 +330,66 @@ class DataDialog(QDialog):
         self.import_legacy_csv_button = QPushButton("1. 匯入舊版 CSV")
         self.export_full_backup_button = QPushButton("2. 匯出完整資料")
         self.import_full_backup_button = QPushButton("3. 匯入完整資料")
-        self.close_button = QPushButton("關閉")
+        self.close_button = QPushButton("×")
+        self.close_button.setFixedSize(36, 36)
         self.close_button.clicked.connect(self.accept)
 
-        csv_hint = QLabel("請選擇舊版 Forgetting Curve 匯出的 .csv。")
-        csv_hint.setWordWrap(True)
-        export_hint = QLabel("會輸出 .zip，包含 SQLite 資料庫、背景、貼圖與個人化設定。")
-        export_hint.setWordWrap(True)
-        import_hint = QLabel("請選擇 v8 完整資料包 .zip，系統會先驗證再替換目前資料。")
-        import_hint.setWordWrap(True)
+        self.legacy_csv_hint = QLabel("請上傳舊版 Forgetting Curve 匯出的 .csv。")
+        self.legacy_csv_hint.setWordWrap(True)
+        self.full_export_hint = QLabel(
+            "會下載 .zip，包含 SQLite 資料庫、背景、貼圖與個人化設定。"
+        )
+        self.full_export_hint.setWordWrap(True)
+        self.full_import_hint = QLabel(
+            "請上傳 v8 完整資料包 .zip；系統會先驗證再替換目前資料。"
+        )
+        self.full_import_hint.setWordWrap(True)
+
+        header = QHBoxLayout()
+        title = QLabel("報表 / 資料")
+        title.setStyleSheet("font-size: 24px; font-weight: 800;")
+        header.addWidget(title, 1)
+        header.addWidget(self.close_button)
+
+        actions_panel = QFrame()
+        actions_panel.setObjectName("Panel")
+        actions_layout = QVBoxLayout(actions_panel)
+        actions_title = QLabel("資料操作")
+        actions_title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        actions_layout.addWidget(actions_title)
+        actions_layout.addWidget(description)
+        actions_layout.addWidget(self.import_legacy_csv_button)
+        actions_layout.addWidget(self.legacy_csv_hint)
+        actions_layout.addWidget(self.export_full_backup_button)
+        actions_layout.addWidget(self.full_export_hint)
+        actions_layout.addWidget(self.import_full_backup_button)
+        actions_layout.addWidget(self.full_import_hint)
+        warning = QLabel(
+            "CSV 只給舊版資料轉移使用；完整備份與還原請使用 ZIP，避免傳錯格式。"
+        )
+        warning.setWordWrap(True)
+        warning.setObjectName("WarningNote")
+        actions_layout.addWidget(warning)
+        actions_layout.addStretch(1)
+
+        stats_panel = QFrame()
+        stats_panel.setObjectName("Panel")
+        stats_layout = QVBoxLayout(stats_panel)
+        stats_title = QLabel("前 7 天總完成率")
+        stats_title.setStyleSheet("font-size: 22px; font-weight: 800;")
+        stats_layout.addWidget(stats_title)
+        stats_layout.addWidget(
+            QLabel("計算方式：前 7 天所有到期提醒加總後，以完成數 / 應完成數計算。")
+        )
+        stats_layout.addStretch(1)
+
+        body = QHBoxLayout()
+        body.addWidget(stats_panel, 1)
+        body.addWidget(actions_panel, 1)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(description)
-        layout.addWidget(self.import_legacy_csv_button)
-        layout.addWidget(csv_hint)
-        layout.addWidget(self.export_full_backup_button)
-        layout.addWidget(export_hint)
-        layout.addWidget(self.import_full_backup_button)
-        layout.addWidget(import_hint)
-        layout.addWidget(self.close_button)
+        layout.addLayout(header)
+        layout.addLayout(body)
 
     def choose_csv_open(self) -> Path | None:
         path, _ = QFileDialog.getOpenFileName(

@@ -200,10 +200,50 @@ def test_main_window_uses_traditional_chinese_primary_labels(monkeypatch, tmp_pa
     window = MainWindow(tmp_path / "gui.db")
 
     assert window.new_task_button.text() == "新增任務"
-    assert window.import_export_button.text() == "匯入/匯出"
+    assert window.import_export_button.text() == "報表 / 資料"
     assert window.settings_button.text() == "個人化"
     assert window.task_table.horizontalHeaderItem(0).text() == "任務"
     assert window.task_table.horizontalHeaderItem(2).text() == "下一次"
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_matches_mockup_scroll_and_action_names(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+
+    import datetime as dt
+
+    from PySide6.QtWidgets import QApplication
+
+    from renew_curve.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path / "gui.db")
+
+    assert window.today_scroll.maximumHeight() <= 390
+    assert window.today_scroll.widgetResizable() is True
+    assert window.next_days_title.text() == "接下來 3 天"
+    assert window.complete_next_button.text() == "完成下一次"
+
+    card = window._build_reminder_card(
+        type(
+            "Item",
+            (),
+            {
+                "task_title": "測試任務",
+                "category": "測試",
+                "notes": "備註",
+                "remind_time": dt.datetime(2026, 5, 7, 9),
+                "review_index": 1,
+                "total_reviews": 3,
+                "reminder_id": 1,
+            },
+        )()
+    )
+    buttons = card.findChildren(__import__("PySide6.QtWidgets").QtWidgets.QPushButton)
+    assert [button.text() for button in buttons] == ["完成", "推延"]
+    assert {button.objectName() for button in buttons} == {"OutlineActionButton"}
 
     window.close()
     app.processEvents()

@@ -23,15 +23,17 @@ def build_stylesheet(accent: str = "blue", dark: bool = False, compact: bool = F
         border = "#374151"
         hover = "#374151"
         table_alt = "#182132"
+        soft = "#1e3a5f"
     else:
-        window_bg = "#f3f6fb"
-        surface = "#ffffff"
-        panel = "#ffffff"
+        window_bg = "#edf4fb"
+        surface = "rgba(248, 250, 252, 0.92)"
+        panel = "rgba(255, 255, 255, 0.93)"
         text = "#111827"
         muted = "#6b7280"
         border = "#d9e2ef"
         hover = "#eef4ff"
         table_alt = "#f8fafc"
+        soft = "#dbeafe"
 
     return f"""
 QMainWindow {{
@@ -50,11 +52,12 @@ QWidget {{
 }}
 
 QPushButton {{
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
+    background: #ffffff;
+    border: 1px solid {border};
+    border-radius: 8px;
     padding: {padding};
-    text-align: left;
+    text-align: center;
+    font-weight: 600;
 }}
 
 QPushButton:hover {{
@@ -74,6 +77,29 @@ QPushButton#PrimaryButton:hover {{
     background: {accent_color};
 }}
 
+QPushButton#OutlineActionButton {{
+    background: #ffffff;
+    border: 1px solid #c8d4e4;
+    border-radius: 8px;
+    color: #344054;
+    font-weight: 800;
+    padding: 10px 13px;
+    text-align: center;
+}}
+
+QPushButton#ChipButton, QPushButton#ChipButtonActive {{
+    border-radius: 999px;
+    padding: 7px 11px;
+    text-align: center;
+}}
+
+QPushButton#ChipButtonActive {{
+    background: {soft};
+    border-color: #93c5fd;
+    color: #1d4ed8;
+    font-weight: 800;
+}}
+
 QFrame#Panel {{
     background: {panel};
     border: 1px solid {border};
@@ -83,6 +109,37 @@ QFrame#Panel {{
 
 QLabel#Muted {{
     color: {muted};
+}}
+
+QLabel#CountPill {{
+    background: {soft};
+    border-radius: 14px;
+    color: #1d4ed8;
+    font-weight: 900;
+    padding: 5px 8px;
+}}
+
+QLabel#NextMiniTask {{
+    border-top: 1px solid {border};
+    padding-top: 7px;
+    line-height: 1.4;
+}}
+
+QLabel#WarningNote {{
+    background: #fff7ed;
+    border-left: 3px solid #f59e0b;
+    color: #92400e;
+    padding: 10px;
+}}
+
+QFrame#PreviewRow {{
+    border-bottom: 1px solid {border};
+    padding: 8px 0;
+}}
+
+QScrollArea {{
+    background: transparent;
+    border: 0;
 }}
 
 QTableWidget {{

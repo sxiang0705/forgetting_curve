@@ -52,6 +52,7 @@ class MainWindow(QMainWindow):
         )
 
         self._selected_day = dt.date.today()
+        self._selected_category = "全部"
         self._build_ui()
         self.refresh_dashboard()
 
@@ -103,7 +104,13 @@ class MainWindow(QMainWindow):
             }
 
     def _render_all_tasks(self) -> None:
-        tasks = self._all_tasks
+        self._render_category_chips()
+        tasks = [
+            task
+            for task in self._all_tasks
+            if self._selected_category == "全部"
+            or task.category == self._selected_category
+        ]
         next_reminders = self._all_next_reminders
         self.task_table.setRowCount(len(tasks))
         self._row_task_ids: list[int] = []
@@ -133,6 +140,35 @@ class MainWindow(QMainWindow):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.task_table.setItem(row_index, column_index, item)
 
+    def _render_category_chips(self) -> None:
+        if not hasattr(self, "category_chips_layout"):
+            return
+        self._clear_layout(self.category_chips_layout)
+        categories = ["全部"] + sorted(
+            {task.category for task in self._all_tasks if task.category.strip()}
+        )
+        if self._selected_category not in categories:
+            self._selected_category = "全部"
+        for category in categories:
+            button = QPushButton(category)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setObjectName(
+                "ChipButtonActive"
+                if category == self._selected_category
+                else "ChipButton"
+            )
+            button.clicked.connect(
+                lambda _checked=False, selected=category: self._select_category(
+                    selected
+                )
+            )
+            self.category_chips_layout.addWidget(button)
+        self.category_chips_layout.addStretch(1)
+
+    def _select_category(self, category: str) -> None:
+        self._selected_category = category
+        self._render_all_tasks()
+
     def _render_day_reminders(self, day: dt.date) -> None:
         self.day_title_label.setText(
             "今天任務" if day == dt.date.today() else day.strftime("%m/%d 任務")
@@ -153,22 +189,38 @@ class MainWindow(QMainWindow):
         for day, items in self._next_three_days.items():
             row = QFrame()
             row.setObjectName("Panel")
-            layout = QHBoxLayout(row)
-            layout.setContentsMargins(10, 8, 10, 8)
-            layout.setSpacing(8)
-            date_label = QLabel(day.strftime("%m/%d"))
-            date_label.setFixedWidth(44)
-            layout.addWidget(date_label)
-            names = "、".join(item.task_title for item in items[:3])
-            if len(items) > 3:
-                names += f" 等 {len(items)} 筆"
-            summary = QLabel(names or "無任務")
-            summary.setWordWrap(True)
-            layout.addWidget(summary, 1)
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(10, 8, 10, 8)
+            row_layout.setSpacing(8)
+
+            header = QHBoxLayout()
+            date_label = QLabel(
+                "今天" if day == dt.date.today() else day.strftime("%m/%d")
+            )
+            date_label.setStyleSheet("font-weight: 700;")
+            header.addWidget(date_label, 1)
             count = QLabel(str(len(items)))
             count.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            count.setFixedWidth(28)
-            layout.addWidget(count)
+            count.setObjectName("CountPill")
+            count.setFixedWidth(36)
+            header.addWidget(count)
+            row_layout.addLayout(header)
+
+            if not items:
+                empty = QLabel("無任務")
+                empty.setObjectName("Muted")
+                row_layout.addWidget(empty)
+            for item in items[:4]:
+                task = QLabel(
+                    f"{item.task_title}\n{item.remind_time.strftime('%H:%M')}  {item.category}"
+                )
+                task.setObjectName("NextMiniTask")
+                task.setWordWrap(True)
+                row_layout.addWidget(task)
+            if len(items) > 4:
+                more = QLabel(f"還有 {len(items) - 4} 筆")
+                more.setObjectName("Muted")
+                row_layout.addWidget(more)
             self.next_three_days_layout.addWidget(row)
         self.next_three_days_layout.addStretch(1)
 
@@ -195,6 +247,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(content, 1)
 
         complete_button = QPushButton("完成")
+        complete_button.setObjectName("OutlineActionButton")
         complete_button.setCursor(Qt.CursorShape.PointingHandCursor)
         complete_button.clicked.connect(
             lambda _checked=False, reminder_id=item.reminder_id: self._complete_reminder(
@@ -202,6 +255,7 @@ class MainWindow(QMainWindow):
             )
         )
         snooze_button = QPushButton("推延")
+        snooze_button.setObjectName("OutlineActionButton")
         snooze_button.setCursor(Qt.CursorShape.PointingHandCursor)
         snooze_button.clicked.connect(
             lambda _checked=False, reminder_id=item.reminder_id: self._snooze_reminder(
@@ -268,7 +322,7 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(300)
+        sidebar.setFixedWidth(330)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 18, 16, 18)
@@ -304,9 +358,14 @@ class MainWindow(QMainWindow):
         next_frame.setObjectName("Panel")
         next_layout = QVBoxLayout(next_frame)
         next_layout.setContentsMargins(12, 12, 12, 12)
-        next_title = QLabel("接下來 3 天")
-        next_title.setStyleSheet("font-size: 18px; font-weight: 700;")
-        next_layout.addWidget(next_title)
+        next_header = QHBoxLayout()
+        self.next_days_title = QLabel("接下來 3 天")
+        self.next_days_title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        next_header.addWidget(self.next_days_title, 1)
+        next_caption = QLabel("列出每日任務")
+        next_caption.setObjectName("Muted")
+        next_header.addWidget(next_caption)
+        next_layout.addLayout(next_header)
         self.next_three_days_layout = QVBoxLayout()
         next_layout.addLayout(self.next_three_days_layout)
         layout.addWidget(next_frame, 1)
@@ -325,10 +384,15 @@ class MainWindow(QMainWindow):
         header.addWidget(self.day_title_label)
         header.addStretch(1)
 
-        self.import_export_button = QPushButton("匯入/匯出")
+        self.import_export_button = QPushButton("報表 / 資料")
         self.import_export_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.import_export_button.clicked.connect(self.open_import_export_dialog)
         header.addWidget(self.import_export_button)
+
+        self.schedule_help_button = QPushButton("排程說明")
+        self.schedule_help_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.schedule_help_button.clicked.connect(self.open_schedule_help_dialog)
+        header.addWidget(self.schedule_help_button)
 
         self.settings_button = QPushButton("個人化")
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -363,16 +427,21 @@ class MainWindow(QMainWindow):
         self.today_tasks_layout = QVBoxLayout(self.today_tasks_container)
         self.today_tasks_layout.setContentsMargins(0, 0, 0, 0)
         self.today_tasks_layout.setSpacing(10)
-        today_scroll = QScrollArea()
-        today_scroll.setWidgetResizable(True)
-        today_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        today_scroll.setWidget(self.today_tasks_container)
-        today_scroll.setMinimumHeight(230)
-        layout.addWidget(today_scroll)
+        self.today_scroll = QScrollArea()
+        self.today_scroll.setWidgetResizable(True)
+        self.today_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.today_scroll.setWidget(self.today_tasks_container)
+        self.today_scroll.setMinimumHeight(260)
+        self.today_scroll.setMaximumHeight(370)
+        layout.addWidget(self.today_scroll)
 
         all_title = QLabel("所有任務")
         all_title.setStyleSheet("font-size: 20px; font-weight: 700;")
         layout.addWidget(all_title)
+
+        self.category_chips_layout = QHBoxLayout()
+        self.category_chips_layout.setSpacing(8)
+        layout.addLayout(self.category_chips_layout)
 
         self.task_table = QTableWidget(0, 5)
         self.task_table.setObjectName("AllTasks")
@@ -390,7 +459,8 @@ class MainWindow(QMainWindow):
             self.task_table.horizontalHeader().setSectionResizeMode(
                 column, QHeaderView.ResizeToContents
             )
-        self.task_table.setMinimumHeight(220)
+        self.task_table.setMinimumHeight(240)
+        self.task_table.setMaximumHeight(300)
         layout.addWidget(self.task_table, 1)
 
         return center
@@ -575,6 +645,15 @@ class MainWindow(QMainWindow):
             lambda: self._import_full_backup(dialog)
         )
         dialog.exec()
+
+    def open_schedule_help_dialog(self) -> None:
+        QMessageBox.information(
+            self,
+            "排程說明",
+            "新增任務可選「遺忘曲線」或「手動輸入」。\n\n"
+            "遺忘曲線會依開始時間自動產生 1、3、7、14、30 天等複習點；"
+            "推延會整批推動同一任務尚未完成的後續提醒，避免複習間距被打亂。",
+        )
 
     def open_settings_dialog(self) -> None:
         current = self._load_personalization_settings()

@@ -1,0 +1,20 @@
+[project]
+name = "renew-curve"
+version = "8.0.0"
+description = "Modern desktop forgetting-curve reminder tool"
+requires-python = ">=3.10"
+dependencies = [
+  "PySide6>=6.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+renew-curve = "renew_curve.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

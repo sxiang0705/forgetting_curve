@@ -230,6 +230,57 @@ def test_repository_counts_reminders_by_date_and_categories(tmp_path):
     assert categories == ["英文單字", "計算機概論"]
 
 
+def test_repository_keeps_multiple_background_assets_active(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+
+        first_id = repo.add_background_asset("sky.png", "assets/backgrounds/sky.png")
+        second_id = repo.add_background_asset(
+            "forest.png", "assets/backgrounds/forest.png"
+        )
+        backgrounds = repo.list_background_assets()
+
+    states = {asset_id: active for asset_id, _name, _path, active in backgrounds}
+    assert states[first_id] is True
+    assert states[second_id] is True
+
+
+def test_repository_deletes_background_and_clears_section_settings(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        asset_id = repo.add_background_asset("sky.png", "assets/backgrounds/sky.png")
+        repo.set_setting("today_background_id", str(asset_id))
+        repo.set_setting("next_background_id", str(asset_id))
+        repo.set_setting("all_background_id", str(asset_id))
+
+        deleted = repo.delete_background_asset(asset_id)
+        backgrounds = repo.list_background_assets()
+
+        assert deleted == ("sky.png", "assets/backgrounds/sky.png")
+        assert backgrounds == []
+        assert repo.get_setting("today_background_id", "fallback") == ""
+        assert repo.get_setting("next_background_id", "fallback") == ""
+        assert repo.get_setting("all_background_id", "fallback") == ""
+
+
+def test_repository_deletes_sticker_asset(tmp_path):
+    db_path = tmp_path / "v8.db"
+    with connect(db_path) as conn:
+        init_db(conn)
+        repo = ReminderRepository(conn)
+        asset_id = repo.add_sticker_asset("cat.png", "assets/stickers/cat.png")
+
+        deleted = repo.delete_sticker_asset(asset_id)
+        stickers = repo.list_sticker_assets()
+
+    assert deleted == ("cat.png", "assets/stickers/cat.png")
+    assert stickers == []
+
+
 def test_repository_bulk_snoozes_future_pending_reminders(tmp_path):
     db_path = tmp_path / "v8.db"
     with connect(db_path) as conn:

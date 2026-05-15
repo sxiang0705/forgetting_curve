@@ -77,7 +77,8 @@ QPushButton#PrimaryButton:hover {{
     background: {accent_color};
 }}
 
-QPushButton#OutlineActionButton {{
+QPushButton#OutlineActionButton,
+QPushButton#AssetDeleteButton {{
     background: #ffffff;
     border: 1px solid #c8d4e4;
     border-radius: 8px;
@@ -256,6 +257,16 @@ QComboBox, QTextEdit {{
     border: 1px solid {border};
     border-radius: 6px;
     padding: {padding};
+}}
+
+QComboBox:disabled {{
+    background: {table_alt};
+    border-color: {border};
+    color: {muted};
+}}
+
+QComboBox:disabled::drop-down {{
+    border: 0;
 }}
 
 QDialog {{

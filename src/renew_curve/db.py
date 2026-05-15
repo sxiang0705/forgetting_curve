@@ -441,8 +441,6 @@ class ReminderRepository:
         ]
 
     def add_background_asset(self, name: str, path: str, *, active: bool = True) -> int:
-        if active:
-            self._conn.execute("UPDATE backgrounds SET is_active = 0")
         cursor = self._conn.execute(
             "INSERT INTO backgrounds (name, path, is_active) VALUES (?, ?, ?)",
             (name, path, int(active)),
@@ -455,6 +453,29 @@ class ReminderRepository:
             (name, path, int(active)),
         )
         return int(cursor.lastrowid)
+
+    def delete_background_asset(self, asset_id: int) -> tuple[str, str] | None:
+        row = self._conn.execute(
+            "SELECT name, path FROM backgrounds WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        self._conn.execute("DELETE FROM backgrounds WHERE id = ?", (asset_id,))
+        for key in ("today_background_id", "next_background_id", "all_background_id"):
+            self._conn.execute(
+                "UPDATE settings SET value = '' WHERE key = ? AND value = ?",
+                (key, str(asset_id)),
+            )
+        return str(row["name"]), str(row["path"])
+
+    def delete_sticker_asset(self, asset_id: int) -> tuple[str, str] | None:
+        row = self._conn.execute(
+            "SELECT name, path FROM stickers WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        self._conn.execute("DELETE FROM stickers WHERE id = ?", (asset_id,))
+        return str(row["name"]), str(row["path"])
 
     def recalculate_task_progress(self, task_id: int) -> float:
         row = self._conn.execute(

@@ -2,16 +2,28 @@ from __future__ import annotations
 
 import datetime as dt
 import calendar as calendar_lib
+import random
 import shutil
 from contextlib import closing
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Signal, Qt
-from PySide6.QtGui import QColor, QCloseEvent, QPainter, QPainterPath, QPixmap
+from PySide6.QtCore import QRectF, QSize, Signal, Qt
+from PySide6.QtGui import (
+    QColor,
+    QCloseEvent,
+    QImageReader,
+    QMovie,
+    QPainter,
+    QPainterPath,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QFrame,
+    QGraphicsBlurEffect,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -33,7 +45,13 @@ from renew_curve.csv_compat import export_legacy_csv, import_legacy_csv
 from renew_curve.db import ReminderRepository, connect, init_db
 from renew_curve.models import ReminderDraft, Task, TaskDraft
 from renew_curve.scheduler import generated_review_times, snooze_until
-from renew_curve.ui.dialogs import DataDialog, ImportExportDialog, SettingsDialog, TaskDialog
+from renew_curve.ui.dialogs import (
+    DataDialog,
+    ImportExportDialog,
+    SettingsDialog,
+    TaskDialog,
+    fit_window_to_screen,
+)
 from renew_curve.ui.personalization import (
     default_personalization_settings,
     stylesheet_for_personalization,
@@ -133,13 +151,21 @@ class MockupCalendar(QFrame):
                 text = str(day.day) if count == 0 else f"{day.day}\n{count}"
                 button = QPushButton(text)
                 button.setObjectName(self._day_object_name(day, count))
-                button.setFixedHeight(48)
+                button.setMinimumHeight(38)
+                button.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
                 button.setCursor(Qt.CursorShape.PointingHandCursor)
                 button.clicked.connect(
                     lambda _checked=False, selected=day: self._select_day(selected)
                 )
                 self.grid.addWidget(button, row_index, column)
                 self._day_buttons[day] = button
+        for row in range(1, 7):
+            self.grid.setRowStretch(row, 1)
+        for column in range(7):
+            self.grid.setColumnStretch(column, 1)
 
     def _day_object_name(self, day: dt.date, count: int) -> str:
         if day == self._selected_day:
@@ -189,14 +215,79 @@ class WallpaperPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("SectionPanel")
         self.wallpaper_path: Path | None = None
+        self.sticker_path: Path | None = None
         self._wallpaper = QPixmap()
         self._overlay_alpha = 214
+        self.background_blur_radius = 0
+        self.background_darken_alpha = 0
+        self._sticker_label = QLabel(self)
+        self._sticker_movie: QMovie | None = None
+        self._sticker_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        self._sticker_label.hide()
 
-    def set_wallpaper(self, path: Path | None, overlay_alpha: int = 214) -> None:
+    def set_wallpaper(
+        self,
+        path: Path | None,
+        overlay_alpha: int = 214,
+        blur_radius: int = 0,
+        darken_alpha: int = 0,
+    ) -> None:
         self.wallpaper_path = path if path and path.exists() else None
         self._overlay_alpha = max(0, min(255, overlay_alpha))
+        self.background_blur_radius = max(0, min(30, blur_radius))
+        self.background_darken_alpha = max(0, min(255, darken_alpha))
         self._wallpaper = QPixmap(str(self.wallpaper_path)) if self.wallpaper_path else QPixmap()
         self.update()
+
+    def set_sticker(self, path: Path | None, size: int = 76) -> None:
+        if self._sticker_movie is not None:
+            self._sticker_movie.stop()
+            self._sticker_movie.deleteLater()
+            self._sticker_movie = None
+        self._sticker_label.clear()
+        self.sticker_path = path if path and path.exists() else None
+        if self.sticker_path and self.sticker_path.suffix.lower() == ".gif":
+            movie = QMovie(str(self.sticker_path), parent=self._sticker_label)
+            if not movie.isValid():
+                self._sticker_label.hide()
+                return
+            movie.setScaledSize(self._scaled_media_size(self.sticker_path, size))
+            self._sticker_movie = movie
+            self._sticker_label.setMovie(movie)
+            self._sticker_label.setFixedSize(movie.scaledSize())
+            self._position_sticker()
+            self._sticker_label.show()
+            movie.start()
+            return
+        pixmap = QPixmap(str(self.sticker_path)) if self.sticker_path else QPixmap()
+        if pixmap.isNull():
+            self._sticker_label.hide()
+            return
+        scaled = pixmap.scaled(
+            size,
+            size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._sticker_label.setPixmap(scaled)
+        self._sticker_label.setFixedSize(scaled.size())
+        self._position_sticker()
+        self._sticker_label.show()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_sticker()
+
+    def _position_sticker(self) -> None:
+        if self._sticker_label.isHidden():
+            return
+        margin = 14
+        x = max(margin, self.width() - self._sticker_label.width() - margin)
+        y = max(margin, self.height() - self._sticker_label.height() - margin)
+        self._sticker_label.move(x, y)
+        self._sticker_label.raise_()
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -214,14 +305,45 @@ class WallpaperPanel(QFrame):
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
+            scaled = self._blurred_pixmap(scaled, self.background_blur_radius)
             x = (target.width() - scaled.width()) // 2
             y = (target.height() - scaled.height()) // 2
             painter.drawPixmap(x, y, scaled)
+            if self.background_darken_alpha:
+                painter.fillRect(target, QColor(0, 0, 0, self.background_darken_alpha))
             painter.fillRect(target, QColor(255, 255, 255, self._overlay_alpha))
 
         painter.setClipping(False)
         painter.setPen(QColor("#d9e2ef"))
         painter.drawRoundedRect(rect, 8, 8)
+
+    @staticmethod
+    def _blurred_pixmap(pixmap: QPixmap, radius: int) -> QPixmap:
+        if radius <= 0 or pixmap.isNull():
+            return pixmap
+        scene = QGraphicsScene()
+        item = QGraphicsPixmapItem(pixmap)
+        effect = QGraphicsBlurEffect()
+        effect.setBlurRadius(radius)
+        item.setGraphicsEffect(effect)
+        scene.addItem(item)
+        result = QPixmap(pixmap.size())
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        scene.render(painter, QRectF(result.rect()), QRectF(pixmap.rect()))
+        painter.end()
+        return result
+
+    @staticmethod
+    def _scaled_media_size(path: Path, max_size: int) -> QSize:
+        source_size = QImageReader(str(path)).size()
+        if not source_size.isValid() or source_size.width() <= 0 or source_size.height() <= 0:
+            return QSize(max_size, max_size)
+        width = source_size.width()
+        height = source_size.height()
+        if width >= height:
+            return QSize(max_size, max(1, round(height * max_size / width)))
+        return QSize(max(1, round(width * max_size / height)), max_size)
 
 
 class MainWindow(QMainWindow):
@@ -232,7 +354,14 @@ class MainWindow(QMainWindow):
             init_db(conn)
 
         self.setWindowTitle("Renew Curve v8")
-        self.resize(1180, 760)
+        fit_window_to_screen(
+            self,
+            preferred_width=1180,
+            preferred_height=760,
+            minimum_width=960,
+            minimum_height=620,
+            constrain_to_screen=False,
+        )
         self.setStyleSheet(
             self._stylesheet_for_settings(self._load_personalization_settings())
         )
@@ -241,6 +370,7 @@ class MainWindow(QMainWindow):
         self._selected_category = "全部"
         self._build_ui()
         self._apply_active_background()
+        self._apply_active_stickers()
         self.refresh_dashboard()
 
     def close_database(self) -> None:
@@ -520,22 +650,30 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        root_layout.addWidget(self._build_sidebar())
-        root_layout.addWidget(self._build_center(), 1)
+        root_layout.addWidget(self._build_sidebar(), 1)
+        root_layout.addWidget(self._build_center(), 3)
 
         self.setCentralWidget(root)
-        self.setMinimumSize(1040, 680)
+        self.setMinimumSize(960, 620)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(330)
+        sidebar.setMinimumWidth(300)
+        sidebar.setMaximumWidth(440)
+        sidebar.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
+        )
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 18, 16, 18)
         layout.setSpacing(14)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         brand_row = QHBoxLayout()
+        brand_row.setContentsMargins(0, 0, 0, 0)
+        brand_row.setSpacing(10)
         logo = QLabel("FC")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setFixedSize(44, 44)
@@ -544,13 +682,22 @@ class MainWindow(QMainWindow):
             "background: #2563eb; color: white;"
         )
         brand = QLabel("Renew Curve v8")
+        brand.setObjectName("BrandTitle")
+        brand.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
         brand.setStyleSheet("font-size: 18px; font-weight: 700;")
         brand_row.addWidget(logo)
-        brand_row.addWidget(brand, 1)
+        brand_row.addWidget(brand)
+        brand_row.addStretch(1)
         layout.addLayout(brand_row)
 
         calendar_frame = QFrame()
         calendar_frame.setObjectName("Panel")
+        calendar_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         calendar_layout = QVBoxLayout(calendar_frame)
         calendar_layout.setContentsMargins(0, 0, 0, 0)
         self.calendar = MockupCalendar()
@@ -561,10 +708,14 @@ class MainWindow(QMainWindow):
         self.calendar_today_button = QPushButton("回到今天")
         self.calendar_today_button.clicked.connect(self._return_to_today)
         calendar_layout.addWidget(self.calendar_today_button)
-        layout.addWidget(calendar_frame)
+        layout.addWidget(calendar_frame, 5)
 
         self.next_three_days_section = WallpaperPanel()
-        self.next_three_days_section.setMaximumHeight(440)
+        self.next_three_days_section.setMinimumHeight(190)
+        self.next_three_days_section.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         next_layout = QVBoxLayout(self.next_three_days_section)
         next_layout.setContentsMargins(12, 12, 12, 12)
         next_header = QHBoxLayout()
@@ -582,10 +733,9 @@ class MainWindow(QMainWindow):
         self.next_days_scroll = QScrollArea()
         self.next_days_scroll.setWidgetResizable(True)
         self.next_days_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.next_days_scroll.setMaximumHeight(390)
         self.next_days_scroll.setWidget(self.next_three_days_container)
         next_layout.addWidget(self.next_days_scroll)
-        layout.addWidget(self.next_three_days_section, 1)
+        layout.addWidget(self.next_three_days_section, 4)
 
         return sidebar
 
@@ -638,7 +788,11 @@ class MainWindow(QMainWindow):
         self.snooze_next_button.hide()
 
         self.today_section = WallpaperPanel()
-        self.today_section.setMaximumHeight(360)
+        self.today_section.setMinimumHeight(220)
+        self.today_section.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         today_section_layout = QVBoxLayout(self.today_section)
         today_section_layout.setContentsMargins(14, 12, 14, 14)
         today_section_layout.setSpacing(10)
@@ -658,15 +812,18 @@ class MainWindow(QMainWindow):
         self.today_scroll.setWidgetResizable(True)
         self.today_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.today_scroll.setWidget(self.today_tasks_container)
-        self.today_scroll.setMinimumHeight(220)
-        self.today_scroll.setMaximumHeight(300)
+        self.today_scroll.setMinimumHeight(160)
         today_section_layout.addWidget(self.today_scroll)
-        layout.addWidget(self.today_section)
+        layout.addWidget(self.today_section, 4)
 
         self.all_tasks_section = WallpaperPanel()
-        self.all_tasks_section.setMaximumHeight(360)
+        self.all_tasks_section.setMinimumHeight(260)
+        self.all_tasks_section.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         all_section_layout = QVBoxLayout(self.all_tasks_section)
-        all_section_layout.setContentsMargins(14, 12, 14, 14)
+        all_section_layout.setContentsMargins(22, 16, 22, 18)
         all_section_layout.setSpacing(10)
         all_header = QHBoxLayout()
         all_title = QLabel("所有任務")
@@ -699,11 +856,13 @@ class MainWindow(QMainWindow):
             self.task_table.horizontalHeader().setSectionResizeMode(
                 column, QHeaderView.ResizeToContents
             )
-        self.task_table.setMinimumHeight(260)
-        self.task_table.setMaximumHeight(260)
+        self.task_table.setMinimumHeight(180)
+        self.task_table.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         all_section_layout.addWidget(self.task_table)
-        layout.addWidget(self.all_tasks_section)
-        layout.addStretch(1)
+        layout.addWidget(self.all_tasks_section, 6)
 
         return center
 
@@ -898,11 +1057,25 @@ class MainWindow(QMainWindow):
             if dialog_holder:
                 dialog_holder[0].set_sticker_assets(self._load_sticker_assets())
 
+        def delete_background(asset_id: int) -> None:
+            if self._confirm_delete_asset("背景圖片"):
+                self._delete_personalization_asset(asset_id, "backgrounds")
+                if dialog_holder:
+                    dialog_holder[0].set_background_assets(self._load_background_assets())
+
+        def delete_sticker(asset_id: int) -> None:
+            if self._confirm_delete_asset("貼圖"):
+                self._delete_personalization_asset(asset_id, "stickers")
+                if dialog_holder:
+                    dialog_holder[0].set_sticker_assets(self._load_sticker_assets())
+
         dialog = SettingsDialog(
             self,
             current,
             upload_background=upload_background,
             upload_sticker=upload_sticker,
+            delete_background=delete_background,
+            delete_sticker=delete_sticker,
         )
         dialog_holder.append(dialog)
         dialog.set_background_assets(self._load_background_assets())
@@ -920,6 +1093,7 @@ class MainWindow(QMainWindow):
 
         self.setStyleSheet(self._stylesheet_for_settings(values))
         self._apply_active_background(values)
+        self._apply_active_stickers(values)
 
     def _load_background_assets(self) -> list[tuple[int, str, str, bool]]:
         with closing(connect(self.db_path)) as conn:
@@ -933,10 +1107,30 @@ class MainWindow(QMainWindow):
                 return candidate
         return None
 
+    def _background_path_for_setting(
+        self, settings: dict[str, str], setting_key: str
+    ) -> Path | None:
+        selected_id = settings.get(setting_key, "")
+        fallback = self._active_background_path()
+        if not selected_id:
+            return fallback
+        for asset_id, _name, path, active in self._load_background_assets():
+            candidate = Path(path)
+            if str(asset_id) == selected_id and active and candidate.exists():
+                return candidate
+        return fallback
+
     def _load_sticker_assets(self) -> list[tuple[int, str, str, bool]]:
         with closing(connect(self.db_path)) as conn:
             init_db(conn)
             return ReminderRepository(conn).list_sticker_assets()
+
+    def _active_sticker_path(self) -> Path | None:
+        for _asset_id, _name, path, active in self._load_sticker_assets():
+            candidate = Path(path)
+            if active and candidate.exists():
+                return candidate
+        return None
 
     def _store_personalization_asset(self, source: Path, kind: str) -> None:
         target_dir = self._assets_dir() / kind
@@ -954,6 +1148,80 @@ class MainWindow(QMainWindow):
                     repository.add_sticker_asset(source.name, str(target), active=True)
         if kind == "backgrounds":
             self._apply_active_background()
+        else:
+            self._apply_active_stickers()
+
+    def _confirm_delete_asset(self, label: str) -> bool:
+        return (
+            QMessageBox.question(
+                self,
+                "刪除素材",
+                f"確定要刪除這個{label}嗎？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        )
+
+    def _delete_personalization_asset(self, asset_id: int, kind: str) -> None:
+        with closing(connect(self.db_path)) as conn:
+            init_db(conn)
+            repository = ReminderRepository(conn)
+            with conn:
+                if kind == "backgrounds":
+                    deleted = repository.delete_background_asset(asset_id)
+                else:
+                    deleted = repository.delete_sticker_asset(asset_id)
+        if deleted is None:
+            return
+        _name, path = deleted
+        target = Path(path)
+        if target.exists():
+            target.unlink()
+        if kind == "backgrounds":
+            self._apply_active_background()
+        else:
+            self._apply_active_stickers()
+
+    def _random_background_values(self) -> dict[str, str]:
+        active_ids = [
+            str(asset_id)
+            for asset_id, _name, path, active in sorted(
+                self._load_background_assets(), key=lambda asset: asset[0]
+            )
+            if active and Path(path).exists()
+        ]
+        if not active_ids:
+            return {
+                "today_background_id": "",
+                "next_background_id": "",
+                "all_background_id": "",
+            }
+        return {
+            "today_background_id": random.choice(active_ids),
+            "next_background_id": random.choice(active_ids),
+            "all_background_id": random.choice(active_ids),
+        }
+
+    def _random_background_paths(self) -> dict[str, Path | None]:
+        assets = [
+            Path(path)
+            for _asset_id, _name, path, active in sorted(
+                self._load_background_assets(), key=lambda asset: asset[0]
+            )
+            if active and Path(path).exists()
+        ]
+        if not assets:
+            return {
+                "today_background_id": None,
+                "next_background_id": None,
+                "all_background_id": None,
+            }
+        return {
+            "today_background_id": random.choice(assets),
+            "next_background_id": random.choice(assets),
+            "all_background_id": random.choice(assets),
+        }
 
     def _apply_active_background(self, settings: dict[str, str] | None = None) -> None:
         if not all(
@@ -964,10 +1232,73 @@ class MainWindow(QMainWindow):
         settings = settings or self._load_personalization_settings()
         overlay = int(settings.get("background_overlay", "60"))
         overlay_alpha = int(255 * max(0, min(100, overlay)) / 100)
-        path = self._active_background_path()
-        self.today_section.set_wallpaper(path, overlay_alpha)
-        self.all_tasks_section.set_wallpaper(path, overlay_alpha)
-        self.next_three_days_section.set_wallpaper(path, overlay_alpha)
+        blur_radius = int(settings.get("background_blur", "0"))
+        darken = int(settings.get("background_darken", "20"))
+        darken_alpha = int(255 * max(0, min(100, darken)) / 100)
+        if settings.get("background_mode") == "random":
+            paths = self._random_background_paths()
+        else:
+            paths = {
+                "today_background_id": self._background_path_for_setting(
+                    settings, "today_background_id"
+                ),
+                "next_background_id": self._background_path_for_setting(
+                    settings, "next_background_id"
+                ),
+                "all_background_id": self._background_path_for_setting(
+                    settings, "all_background_id"
+                ),
+            }
+        self.today_section.set_wallpaper(
+            paths["today_background_id"],
+            overlay_alpha,
+            blur_radius,
+            darken_alpha,
+        )
+        self.next_three_days_section.set_wallpaper(
+            paths["next_background_id"],
+            overlay_alpha,
+            blur_radius,
+            darken_alpha,
+        )
+        self.all_tasks_section.set_wallpaper(
+            paths["all_background_id"],
+            overlay_alpha,
+            blur_radius,
+            darken_alpha,
+        )
+
+    def _sticker_path_for_settings(self, settings: dict[str, str]) -> Path | None:
+        active_assets = [
+            (str(asset_id), Path(path))
+            for asset_id, _name, path, active in sorted(
+                self._load_sticker_assets(), key=lambda asset: asset[0]
+            )
+            if active and Path(path).exists()
+        ]
+        if not active_assets:
+            return None
+        if settings.get("sticker_mode") == "random":
+            return random.choice([path for _asset_id, path in active_assets])
+        selected_id = settings.get("selected_sticker_id", "")
+        for asset_id, path in active_assets:
+            if selected_id and asset_id == selected_id:
+                return path
+        return active_assets[0][1]
+
+    def _apply_active_stickers(self, settings: dict[str, str] | None = None) -> None:
+        if not all(
+            hasattr(self, attr)
+            for attr in ("today_section", "all_tasks_section", "next_three_days_section")
+        ):
+            return
+        settings = settings or self._load_personalization_settings()
+        path = None
+        if settings.get("sticker_scope", "main_only") != "disabled":
+            path = self._sticker_path_for_settings(settings)
+        self.today_section.set_sticker(path)
+        self.next_three_days_section.set_sticker(path)
+        self.all_tasks_section.set_sticker(path)
 
     @staticmethod
     def _unique_asset_path(target_dir: Path, filename: str) -> Path:

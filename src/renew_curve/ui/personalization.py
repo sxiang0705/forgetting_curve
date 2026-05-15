@@ -12,9 +12,15 @@ def default_personalization_settings() -> dict[str, str]:
         "theme_style": "clean_mountain",
         "sticker_scope": "main_only",
         "functional_window_sticker_density": "low",
+        "sticker_mode": "selected",
+        "selected_sticker_id": "",
         "background_overlay": "60",
         "background_blur": "0",
         "background_darken": "20",
+        "background_mode": "selected",
+        "today_background_id": "",
+        "next_background_id": "",
+        "all_background_id": "",
     }
 
 

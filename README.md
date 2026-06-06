@@ -54,7 +54,13 @@ python -m venv .venv
 
 ## 打包
 
-Windows 打包使用 PyInstaller：
+GitHub repo 內提供單檔 Windows exe：
+
+```text
+release/RenewCurveV8.exe
+```
+
+開發者若要重新打包，建議先用 PyInstaller 的 `onedir` 模式驗證：
 
 ```bash
 .\.venv\Scripts\python -m PyInstaller --clean --noconfirm renew_curve.spec
@@ -64,6 +70,12 @@ Windows 打包使用 PyInstaller：
 
 ```text
 dist/RenewCurveV8/RenewCurveV8.exe
+```
+
+若要重新產生可直接提交或下載的單檔 exe：
+
+```bash
+.\.venv\Scripts\python -m PyInstaller --clean --noconfirm renew_curve_onefile.spec
 ```
 
 詳細說明請看 [docs/PACKAGING.md](docs/PACKAGING.md)。

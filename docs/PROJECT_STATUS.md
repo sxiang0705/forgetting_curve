@@ -66,8 +66,10 @@
 ## 打包狀態
 
 - 打包設定檔：`renew_curve.spec`
+- 單檔打包設定檔：`renew_curve_onefile.spec`
 - exe icon：`resources/icons/FC_3_icon.ico`
-- 輸出位置：`dist/RenewCurveV8/RenewCurveV8.exe`
+- repo 內下載版：`release/RenewCurveV8.exe`
+- onedir 輸出位置：`dist/RenewCurveV8/RenewCurveV8.exe`
 - 使用說明：`docs/PACKAGING.md`
 
 ## 整理後的入口文件

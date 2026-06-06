@@ -1,53 +1,28 @@
-# 遺忘曲線提醒工具 Renew Curve v8
+# Renew Curve v8
 
-Renew Curve v8 是一款以 Python 製作的桌面端學習複習與任務提醒工具。這個版本將主程式從舊版 Tkinter 單檔架構逐步升級為 PySide6 現代桌面 GUI，並把資料層整理成 SQLite repository，讓後續功能擴充、測試與維護都更穩。
+Renew Curve v8 是一款以 Python 製作的桌面端學習複習與任務提醒工具。v8 將舊版 Tkinter 單檔程式整理為 PySide6 桌面應用，並改用 SQLite repository 管理任務、提醒、備份與個人化設定。
 
-v8 的核心目標是：保留舊版 CSV 資料承接能力，同時建立更現代、更可持續演進的新介面。
+這個版本的重點是：保留舊版 CSV 資料承接能力，同時建立更容易維護、測試與持續擴充的新架構。
 
-## v8 重點
+## 目前狀態
 
-- 現代化 PySide6 GUI：正式版開始對齊 HTML mockup 主視覺，左側月曆切換日期，中間顯示該日任務，下方固定所有任務表格並支援捲動。
-- 主要介面繁中化：新版 GUI 的主按鈕、欄位與對話框已改為繁體中文。
-- 新增任務流程：可從新版 GUI 建立任務，支援遺忘曲線自動產生與手動輸入複習時間，右側會即時預覽複習日期。
-- 任務處理流程：今日任務卡可直接完成或推延；推延可用於整批移動該任務後續未完成提醒。
-- 報表 / 資料視窗：集中顯示前 7 天總完成率與三個主要資料操作入口，分清楚舊版 CSV 匯入與新版 ZIP 完整備份。
-- SQLite 資料層重構：以 `ReminderRepository` 管理任務、提醒與個人化設定，降低 GUI 與資料庫耦合。
-- 舊版 CSV 匯入：支援從舊版匯出的 `.csv` 匯入新版資料庫，用於舊資料轉移。
-- 完整 ZIP 備份：新版完整備份會輸出 `.zip`，包含 SQLite 資料庫、背景、貼圖與個人化設定。
-- 個人化設定：支援主題、重點色、密度、預設 snooze、背景參數與貼圖顯示範圍，並在 CSV 匯入時保留設定。
-- 區塊背景套用：上傳並啟用的背景圖片會放在「今天任務」、「接下來 3 天」、「所有任務」三個內容區塊裡，不會直接鋪滿月曆、側欄或整個視窗。
-- 測試保護：排程、資料庫、CSV 相容、GUI import 與個人化設定都有 pytest 測試覆蓋。
+- GitHub `main` 目前已是 v8 PySide6 版本。
+- 核心功能已包含任務建立、遺忘曲線排程、今日任務完成/推延、舊版 CSV 匯入、新版 ZIP 完整備份、報表資料視窗與個人化設定。
+- 專案已整理為 `src/renew_curve/` 套件結構，測試放在 `tests/`。
+- 本機資料庫、使用者上傳素材、虛擬環境與打包產物會被 `.gitignore` 排除，不會進入 GitHub。
 
-## v8 主畫面設計方向
+更多整理後的現況請看 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)，後續方向請看 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
-目前正式版 PySide 會以 HTML mockup 作為視覺基準，但兩者不是同一套渲染系統，因此目標是「使用者看起來像同一套設計」，不是逐像素完全相同。
+## 功能重點
 
-- 今天任務區有內部捲軸，任務很多時不會把所有任務表格推到畫面下方。
-- 完成與推延按鈕採同一種白底灰框樣式，避免完成按鈕過度搶眼。
-- 左側「接下來 3 天」改為列出每天的任務，而不是只顯示泛稱的複習任務。
-- 所有任務區提供分類 chip，任務很多時可在區塊內捲動與切換分類；表格加入備註欄，並固定高度避免分類切換時版面跳動。
-- 主畫面以「今天任務」與「所有任務」兩個區塊承載內容，降低大面積留白；左側接下來 3 天也有內部捲軸。
-- 月曆圖例以色塊搭配數量區間呈現，避免只用文字描述顏色。
-- 月曆切換月份時會立即載入該月份任務數量，避免切到未來月份時先顯示空白、要點日期後才更新。
-- 新增任務視窗採左側輸入、右側預覽；報表 / 資料視窗採總覽與資料操作分區。
-- 個人化視窗的背景與貼圖上傳會寫入 v8 assets 資料夾與 SQLite 素材資料表，背景會套用在三個任務內容區塊，貼圖則依顯示位置與密度設定出現在主畫面的空白角落或卡片角落。
-- 個人化素材清單有自己的捲軸，背景或貼圖很多時不會把整個設定視窗撐開。
-
-## v8 資料備份
-
-- `匯入舊版 CSV`：用於舊版資料轉移，請選擇 `.csv`。系統會讀取舊版 `task` 與 `reminder`，並依提醒完成數重新計算進度。
-- `匯出完整資料`：輸出新版完整 `.zip`，包含 SQLite 資料庫、背景、貼圖與個人化設定。
-- `匯入完整資料`：還原新版完整 `.zip`，系統會先驗證 `manifest.json` 與資料庫檔案，再替換目前資料。
-- CSV 是跨版本交換格式；完整備份與日後主要搬移資料請使用 ZIP，避免只搬到任務卻漏掉背景、貼圖和設定。
-- 報表 / 資料視窗的統計數字會從目前 SQLite 重新計算，包含前 7 天總完成率、總完成率、今日任務、未完成提醒與已完成提醒。
-
-## 舊資料承接
-
-如果你之前使用舊版匯出 `.csv` 當作備份或資料庫，v8 的設計重點就是讓這些檔案能繼續使用。
-
-- 使用 `報表 / 資料` 的 `匯入舊版 CSV`：以 CSV 內容替換目前任務與提醒資料。
-- replace 匯入會保留新版個人化設定，例如主題、重點色、密度與 snooze 偏好。
-- 匯入失敗時不會覆蓋原資料庫，避免壞掉的 CSV 造成資料遺失。
+- 現代化 PySide6 GUI，主畫面包含今日任務、接下來 3 天、月曆與所有任務表格。
+- 主要介面與對話框已繁體中文化。
+- 新增任務支援遺忘曲線自動排程與手動複習日期。
+- 今日任務可直接完成或推延，推延會移動後續未完成提醒。
+- 報表 / 資料視窗提供完成率統計、舊版 CSV 匯入與新版完整備份。
+- SQLite 資料層集中在 `ReminderRepository`，降低 GUI 與資料庫耦合。
+- 個人化設定支援主題、重點色、密度、預設 snooze、背景與貼圖素材。
+- 自動化測試涵蓋排程、資料庫、CSV 相容、備份、GUI import 與個人化設定。
 
 ## 安裝與執行
 
@@ -59,23 +34,54 @@ python -m venv .venv
 .\.venv\Scripts\python -m renew_curve.app
 ```
 
-如果只要執行測試：
+也可以使用 console script：
+
+```bash
+.\.venv\Scripts\renew-curve
+```
+
+## 測試
 
 ```bash
 .\.venv\Scripts\python -m pytest -q
 ```
 
+目前整理分支的 baseline 測試結果：
+
+```text
+91 passed
+```
+
 ## 專案結構
 
+```text
+src/renew_curve/        v8 應用程式套件
+src/renew_curve/ui/     PySide6 主視窗、對話框與樣式
+tests/                  pytest 測試
+docs/                   專案現況、路線圖與設計文件
+resources/icons/        專案 icon 資源
+update_record/          v1 到 v8 歷代更新紀錄
+```
+
+主要模組：
+
 - `src/renew_curve/app.py`：v8 PySide6 app 入口。
-- `src/renew_curve/ui/`：新版 GUI 主視窗、對話框與主題樣式。
-- `src/renew_curve/db.py`：SQLite 連線、schema 初始化與 repository。
+- `src/renew_curve/db.py`：SQLite schema 初始化與 repository。
 - `src/renew_curve/csv_compat.py`：舊版 CSV 匯入、匯出與資料轉換。
+- `src/renew_curve/backup.py`：新版 ZIP 完整備份匯入與匯出。
 - `src/renew_curve/scheduler.py`：遺忘曲線排程、進度計算與 snooze 邏輯。
-- `tests/`：v8 自動化測試。
-- `curve.py`：保留的 Tkinter 舊版主程式，可作為 v7 行為參考。
-- `update_record/`：歷代版本更新紀錄。
+- `src/renew_curve/ui/main_window.py`：主畫面。
+- `src/renew_curve/ui/dialogs.py`：新增任務、報表資料與個人化對話框。
 
-## 版本狀態
+## 資料與備份
 
-v8 目前完成現代 GUI 主畫面、CSV 承接、新增任務雙排程、今日任務完成/推延、報表資料入口、ZIP 完整備份、個人化設定與資料層重構。舊版的背景提醒彈窗與更完整的素材管理操作，仍可參考 `curve.py` 舊版架構，後續逐步移植到 v8。
+- 舊版資料轉移請使用 `匯入舊版 CSV`。
+- 新版完整搬移請使用 `匯出完整資料` / `匯入完整資料`，格式為 `.zip`。
+- ZIP 完整備份會包含 SQLite 資料庫、背景、貼圖與個人化設定。
+- 本機執行產生的 `renew_curve_v8.db` 不會提交到 GitHub。
+
+## 歷史文件
+
+- [update_record/curve_tool_record_v8.md](update_record/curve_tool_record_v8.md)：v8 更新紀錄。
+- [docs/superpowers/specs](docs/superpowers/specs)：v8 設計規格與重設計紀錄。
+- [docs/superpowers/plans](docs/superpowers/plans)：v8 實作計畫紀錄。

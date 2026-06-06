@@ -49,8 +49,24 @@ python -m venv .venv
 目前整理分支的 baseline 測試結果：
 
 ```text
-91 passed
+93 passed
 ```
+
+## 打包
+
+Windows 打包使用 PyInstaller：
+
+```bash
+.\.venv\Scripts\python -m PyInstaller --clean --noconfirm renew_curve.spec
+```
+
+輸出位置：
+
+```text
+dist/RenewCurveV8/RenewCurveV8.exe
+```
+
+詳細說明請看 [docs/PACKAGING.md](docs/PACKAGING.md)。
 
 ## 專案結構
 

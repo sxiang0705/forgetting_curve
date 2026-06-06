@@ -6,7 +6,7 @@
 
 - `main` 已合併 `codex/v8-modern-gui-impl`，目前主分支內容是 v8 PySide6 版本。
 - `codex/v8-modern-gui-impl` 保留為 v8 GUI 實作歷史分支。
-- 本次 repo 整理會在 `codex/repo-cleanup` 上進行，再推回 GitHub。
+- `codex/repo-cleanup` 用於 repo 整理與打包文件更新。
 
 ## 目前完成
 
@@ -19,6 +19,7 @@
 - ZIP 完整備份與還原。
 - 報表 / 資料視窗。
 - 主題、重點色、密度、背景與貼圖等個人化設定。
+- PyInstaller Windows 打包設定。
 - pytest 測試保護。
 
 ## 程式架構
@@ -33,10 +34,10 @@
 
 ## 測試狀態
 
-整理前 baseline：
+整理與打包設定更新後：
 
 ```text
-91 passed
+93 passed
 ```
 
 主要測試範圍：
@@ -62,9 +63,17 @@
 - `*.sqlite`
 - `*.sqlite3`
 
+## 打包狀態
+
+- 打包設定檔：`renew_curve.spec`
+- exe icon：`resources/icons/FC_3_icon.ico`
+- 輸出位置：`dist/RenewCurveV8/RenewCurveV8.exe`
+- 使用說明：`docs/PACKAGING.md`
+
 ## 整理後的入口文件
 
 - `README.md`：GitHub 首頁與快速開始。
 - `docs/PROJECT_STATUS.md`：目前專案狀態。
+- `docs/PACKAGING.md`：Windows 打包流程。
 - `docs/ROADMAP.md`：後續整理與開發方向。
 - `update_record/`：歷代更新紀錄。
